@@ -11,7 +11,7 @@ import type { Point } from '@/lib/types'
 import { liveCamera } from '@/lib/cameraState'
 
 // ── First-person camera ───────────────────────────────────────────────────────
-function CameraController({ homeSignal }: { homeSignal: number }) {
+function CameraController({ homeSignal, flySpeed }: { homeSignal: number; flySpeed: number }) {
   const { camera, gl } = useThree()
   const keys = useRef(new Set<string>())
   const yaw = useRef(0)
@@ -91,7 +91,7 @@ function CameraController({ homeSignal }: { homeSignal: number }) {
     }
 
     const warp = keys.current.has('shift')
-    const MOVE = (warp ? 14 : 3.5) * delta
+    const MOVE = (warp ? 14 : 3.5) * flySpeed * delta
     const TURN = 1.6 * delta
     const k = keys.current
 
@@ -262,6 +262,7 @@ interface SceneProps {
   flyTarget: [number, number, number] | null
   showLines: boolean
   homeSignal: number
+  flySpeed: number
   activePath: string[]
   pathStep: number
   onSelectPoint: (id: string | null) => void
@@ -271,7 +272,7 @@ interface SceneProps {
 
 export function Scene({
   points, selectedId, neighborIds, expandedIds,
-  triggerRadius, autoExpand, flyTarget, showLines, homeSignal,
+  triggerRadius, autoExpand, flyTarget, showLines, homeSignal, flySpeed,
   activePath, pathStep,
   onSelectPoint, onExpandPoint, onContextMenu,
 }: SceneProps) {
@@ -284,7 +285,7 @@ export function Scene({
       <ambientLight intensity={0.2} />
       <Stars radius={80} depth={60} count={1500} factor={2} fade />
 
-      <CameraController homeSignal={homeSignal} />
+      <CameraController homeSignal={homeSignal} flySpeed={flySpeed} />
       <CenterOnPoints points={points} />
       <CameraFlyTo target={flyTarget} />
 

@@ -32,6 +32,7 @@ export default function Home() {
   // ── Controls ─────────────────────────────────────────────────────────────────
   const [spread, setSpread] = useState(0.4)
   const [triggerRadius, setTriggerRadius] = useState(1.8)
+  const [flySpeed, setFlySpeed] = useState(1.6)
   const [autoExpand, setAutoExpand] = useState(true)
   const [showLines, setShowLines] = useState(false)
   const [showClusters, setShowClusters] = useState(false)
@@ -569,6 +570,7 @@ export default function Home() {
         flyTarget={flyTarget}
         showLines={showLines}
         homeSignal={homeSignal}
+        flySpeed={flySpeed}
         activePath={activePath}
         pathStep={pathStep}
         onSelectPoint={id => {
