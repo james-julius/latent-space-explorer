@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, KeyboardEvent } from 'react'
+import { useState, useRef, useEffect, KeyboardEvent } from 'react'
 import type { ModelStatus, Point } from '@/lib/types'
 import { PRESETS } from '@/lib/presets'
 import { nearestNeighbors } from '@/lib/umap'
@@ -8,21 +8,24 @@ import { nearestNeighbors } from '@/lib/umap'
 interface HUDProps {
   status: ModelStatus
   loadProgress: number
+  isExpanding: boolean
+  spread: number
+  triggerRadius: number
   points: Point[]
   selectedId: string | null
-  onEmbed: (text: string) => void
-  onLoadPreset: (texts: string[]) => void
+  onEmbed: (text: string) => Promise<void>
+  onLoadPreset: (texts: string[]) => Promise<void>
   onClear: () => void
+  onSpreadChange: (v: number) => void
+  onTriggerRadiusChange: (v: number) => void
 }
 
 export function HUD({
-  status,
-  loadProgress,
-  points,
-  selectedId,
-  onEmbed,
-  onLoadPreset,
-  onClear,
+  status, loadProgress, isExpanding,
+  spread, triggerRadius,
+  points, selectedId,
+  onEmbed, onLoadPreset, onClear,
+  onSpreadChange, onTriggerRadiusChange,
 }: HUDProps) {
   const [input, setInput] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
@@ -30,8 +33,22 @@ export function HUD({
   const selectedPoint = points.find(p => p.id === selectedId)
   const neighbors = selectedPoint ? nearestNeighbors(selectedPoint.id, points, 5) : []
 
+  // Listen for keyboard shortcut preset loads (keys 1-5)
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const idx = (e as CustomEvent<number>).detail
+      if (PRESETS[idx] && status === 'ready') {
+        onLoadPreset(PRESETS[idx].texts)
+      }
+    }
+    window.addEventListener('load-preset', handler)
+    return () => window.removeEventListener('load-preset', handler)
+  }, [status, onLoadPreset])
+
+  const canEmbed = status === 'ready' && !isExpanding
+
   const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter' && input.trim() && status === 'ready') {
+    if (e.key === 'Enter' && input.trim() && canEmbed) {
       onEmbed(input.trim())
       setInput('')
     }
@@ -54,9 +71,15 @@ export function HUD({
             }`}
           />
           <div className="text-white/40 text-xs font-mono">
-            {status === 'loading' ? `loading model ${Math.round(loadProgress)}%` :
-             status === 'ready' ? `bge-small-en-v1.5 · ${points.length} point${points.length !== 1 ? 's' : ''}` :
-             status === 'error' ? 'error loading model' : 'initialising'}
+            {status === 'loading'
+              ? loadProgress > 0
+                ? `pulling nomic-embed-text ${loadProgress}%`
+                : 'connecting to ollama…'
+              : status === 'error'
+              ? 'ollama error — is it running?'
+              : isExpanding
+              ? `expanding… ${points.length} point${points.length !== 1 ? 's' : ''}`
+              : `nomic-embed-text · ${points.length} point${points.length !== 1 ? 's' : ''}`}
           </div>
         </div>
 
@@ -151,10 +174,11 @@ export function HUD({
             onChange={e => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder={
-              status === 'ready' ? 'type anything and press enter…' :
+              isExpanding ? 'expanding neighbourhood…' :
+              status === 'ready' ? 'type a concept and press enter…' :
               status === 'loading' ? 'loading model…' : 'initialising…'
             }
-            disabled={status !== 'ready'}
+            disabled={!canEmbed}
             className="w-full bg-black/60 backdrop-blur border border-white/20
               focus:border-white/40 rounded-full px-5 py-3 pr-12
               text-white placeholder-white/25 text-sm font-mono outline-none
@@ -164,8 +188,40 @@ export function HUD({
             ↵
           </div>
         </div>
-        <div className="text-center text-white/20 text-xs font-mono mt-2">
-          click a point to inspect · drag to orbit · scroll to zoom
+        <div className="text-center text-white/20 text-xs font-mono mt-2 space-x-3">
+          <span>wasd move · e/q up/down · mouse/arrows look</span>
+          <span>·</span>
+          <span>tab neighbor · f expand · 1–5 preset</span>
+        </div>
+      </div>
+
+      {/* Bottom-right: world controls */}
+      <div className="absolute bottom-6 right-4 z-10 w-48">
+        <div className="bg-black/50 backdrop-blur border border-white/10 rounded-xl p-3 space-y-3">
+          <div>
+            <div className="flex justify-between text-white/30 text-xs font-mono mb-1">
+              <span>spread</span>
+              <span>{spread.toFixed(1)}</span>
+            </div>
+            <input
+              type="range" min="0.1" max="2.0" step="0.1"
+              value={spread}
+              onChange={e => onSpreadChange(parseFloat(e.target.value))}
+              className="w-full accent-white/40 cursor-pointer"
+            />
+          </div>
+          <div>
+            <div className="flex justify-between text-white/30 text-xs font-mono mb-1">
+              <span>expansion radius</span>
+              <span>{triggerRadius.toFixed(1)}</span>
+            </div>
+            <input
+              type="range" min="0.5" max="5.0" step="0.25"
+              value={triggerRadius}
+              onChange={e => onTriggerRadiusChange(parseFloat(e.target.value))}
+              className="w-full accent-white/40 cursor-pointer"
+            />
+          </div>
         </div>
       </div>
     </>
