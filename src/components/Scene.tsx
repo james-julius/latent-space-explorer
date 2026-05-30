@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useMemo } from 'react'
 import { Canvas, useThree, useFrame } from '@react-three/fiber'
 import { Stars } from '@react-three/drei'
 import { EffectComposer, Bloom } from '@react-three/postprocessing'
@@ -210,6 +210,49 @@ function ProximityExpander({
   return null
 }
 
+// ── GPS path line ─────────────────────────────────────────────────────────────
+function PathLine({ points, activePath, pathStep }: {
+  points: Point[]; activePath: string[]; pathStep: number
+}) {
+  const geoRef = useRef<THREE.BufferGeometry>(new THREE.BufferGeometry())
+
+  useMemo(() => {
+    const ordered = activePath
+      .map(id => points.find(p => p.id === id))
+      .filter(Boolean) as Point[]
+    if (ordered.length < 2) { geoRef.current = new THREE.BufferGeometry(); return }
+    const positions = new Float32Array(ordered.flatMap(p => p.position))
+    const geo = new THREE.BufferGeometry()
+    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+    geoRef.current = geo
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activePath, points])
+
+  if (activePath.length < 2) return null
+
+  const currentPt = points.find(p => p.id === activePath[pathStep])
+
+  return (
+    <group>
+      {/* Path line */}
+      <line geometry={geoRef.current}>
+        <lineBasicMaterial
+          color="#fbbf24" transparent opacity={0.5}
+          blending={THREE.AdditiveBlending} depthWrite={false}
+        />
+      </line>
+      {/* Current waypoint highlight */}
+      {currentPt && (
+        <mesh position={currentPt.position}>
+          <sphereGeometry args={[0.1, 12, 12]} />
+          <meshBasicMaterial color="#fbbf24" transparent opacity={0.9}
+            blending={THREE.AdditiveBlending} depthWrite={false} />
+        </mesh>
+      )}
+    </group>
+  )
+}
+
 // ── Scene ─────────────────────────────────────────────────────────────────────
 interface SceneProps {
   points: Point[]
@@ -221,6 +264,8 @@ interface SceneProps {
   flyTarget: [number, number, number] | null
   showLines: boolean
   homeSignal: number
+  activePath: string[]
+  pathStep: number
   onSelectPoint: (id: string | null) => void
   onExpandPoint: (id: string) => void
   onContextMenu: (pointId: string, x: number, y: number) => void
@@ -229,6 +274,7 @@ interface SceneProps {
 export function Scene({
   points, selectedId, neighborIds, expandedIds,
   triggerRadius, autoExpand, flyTarget, showLines, homeSignal,
+  activePath, pathStep,
   onSelectPoint, onExpandPoint, onContextMenu,
 }: SceneProps) {
   return (
@@ -259,6 +305,8 @@ export function Scene({
           neighborIds={neighborIds}
         />
       )}
+
+      <PathLine points={points} activePath={activePath} pathStep={pathStep} />
 
       <PointCloud
         points={points}

@@ -13,9 +13,13 @@ interface HUDProps {
   spread: number
   triggerRadius: number
   autoExpand: boolean
+  dreamMode: boolean
   showLines: boolean
   showClusters: boolean
   bridgeFrom: string | null
+  gpsFrom: string | null
+  activePath: string[]
+  pathStep: number
   points: Point[]
   selectedId: string | null
   visitHistory: string[]
@@ -27,11 +31,14 @@ interface HUDProps {
   onSpreadChange: (v: number) => void
   onTriggerRadiusChange: (v: number) => void
   onToggleAutoExpand: () => void
+  onToggleDream: () => void
   onToggleLines: () => void
   onToggleClusters: () => void
   onGoHome: () => void
   onCancelBridge: () => void
+  onCancelGPS: () => void
   onSearch: () => void
+  onImport: () => void
   onNavigate: (id: string) => void
 }
 
@@ -54,12 +61,13 @@ function ToggleBtn({
 
 export function HUD({
   status, loadProgress, isExpanding,
-  spread, triggerRadius, autoExpand, showLines, showClusters,
-  bridgeFrom, points, selectedId, visitHistory, historyIdx,
+  spread, triggerRadius, autoExpand, dreamMode, showLines, showClusters,
+  bridgeFrom, gpsFrom, activePath, pathStep,
+  points, selectedId, visitHistory, historyIdx,
   onEmbed, onLoadPreset, onClear, onUndo,
   onSpreadChange, onTriggerRadiusChange,
-  onToggleAutoExpand, onToggleLines, onToggleClusters,
-  onGoHome, onCancelBridge, onSearch, onNavigate,
+  onToggleAutoExpand, onToggleDream, onToggleLines, onToggleClusters,
+  onGoHome, onCancelBridge, onCancelGPS, onSearch, onImport, onNavigate,
 }: HUDProps) {
   const [input, setInput] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)

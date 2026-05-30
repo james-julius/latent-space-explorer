@@ -6,12 +6,15 @@ import { HUD } from '@/components/HUD'
 import { SearchOverlay } from '@/components/SearchOverlay'
 import { ContextMenu, type ContextAction } from '@/components/ContextMenu'
 import { EmbedFeed } from '@/components/EmbedFeed'
+import { ImportOverlay } from '@/components/ImportOverlay'
 import type { Point, ModelStatus, ContextMenuState } from '@/lib/types'
 import { pointColor } from '@/lib/colors'
 import { projectToPositions, nearestNeighbors, STABLE_THRESHOLD, placeNearNeighbors } from '@/lib/umap'
 import { ollamaEmbed, isEmbedModelAvailable, pullModel, generateRelated } from '@/lib/ollama'
 import { generateBridgeConcepts } from '@/lib/bridge'
 import { kMeans, CLUSTER_COLORS } from '@/lib/clustering'
+import { chunkText, type Chunk } from '@/lib/documents'
+import { liveCamera } from '@/lib/cameraState'
 
 const Scene = dynamic(() => import('@/components/Scene').then(m => m.Scene), { ssr: false })
 
@@ -45,6 +48,21 @@ export default function Home() {
 
   // ── Context menu ─────────────────────────────────────────────────────────────
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null)
+
+  // ── Dream mode ────────────────────────────────────────────────────────────────
+  const [dreamMode, setDreamMode] = useState(false)
+
+  // ── GPS / Narrative path ──────────────────────────────────────────────────────
+  const [gpsFrom, setGpsFrom] = useState<string | null>(null)
+  const [activePath, setActivePath] = useState<string[]>([])
+  const [pathStep, setPathStep] = useState(-1)
+  const gpsFromRef = useRef<string | null>(null)
+  const activePathRef = useRef<string[]>([])
+  gpsFromRef.current = gpsFrom
+  activePathRef.current = activePath
+
+  // ── Import ────────────────────────────────────────────────────────────────────
+  const [showImport, setShowImport] = useState(false)
 
 
   // ── Undo ─────────────────────────────────────────────────────────────────────
@@ -263,12 +281,118 @@ export default function Home() {
     }
   }, [embedOne])
 
+  // ── Document import ───────────────────────────────────────────────────────────
+  const handleImport = useCallback(async (chunks: Chunk[]) => {
+    if (!modelReady.current || status !== 'ready') return
+    undoStack.current.push([...pointsRef.current])
+    undoExpandedStack.current.push(new Set(expandedIdsRef.current))
+
+    // All chunks from the same doc share the same base hue (golden-ratio stepped from current index)
+    const baseIdx = colorIndex.current
+    for (let i = 0; i < chunks.length; i++) {
+      const chunk = chunks[i]
+      const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`
+      const color = pointColor(baseIdx + i)
+      const jitter = (): number => (Math.random() - 0.5) * 0.12
+      const placeholderPos: [number, number, number] = [jitter(), jitter(), jitter()]
+
+      setPoints(prev => [
+        ...prev,
+        { id, text: chunk.text, fullText: chunk.fullText, source: chunk.source,
+          embedding: [], position: placeholderPos, color, isPending: true },
+      ])
+
+      const embedding = await ollamaEmbed(chunk.text)
+      const point: Point = { id, text: chunk.text, fullText: chunk.fullText, source: chunk.source,
+        embedding, position: placeholderPos, color }
+
+      setPoints(prev => {
+        const rest = prev.filter(p => p.id !== id)
+        const realPoints = rest.filter(p => !p.isPending)
+        if (realPoints.length < STABLE_THRESHOLD) {
+          const eligible = [...realPoints, point]
+          const positions = projectToPositions(eligible)
+          const positioned = eligible.map((p, idx2) => ({ ...p, position: positions[idx2] }))
+          return [...prev.filter(p => p.isPending && p.id !== id), ...positioned]
+        }
+        const pos = placeNearNeighbors(embedding, realPoints, spreadRef.current)
+        return [...rest, { ...point, position: pos }]
+      })
+    }
+    colorIndex.current = baseIdx + chunks.length
+  }, [status])
+
+  // ── GPS: narrative path between two points ────────────────────────────────────
+  const handleGPS = useCallback(async (fromId: string, toId: string) => {
+    const a = pointsRef.current.find(p => p.id === fromId)
+    const b = pointsRef.current.find(p => p.id === toId)
+    if (!a || !b) return
+    setIsExpanding(true)
+    expandingRef.current = true
+    try {
+      const concepts = await generateBridgeConcepts(a.text, b.text)
+      const waypointIds: string[] = []
+      for (const c of concepts) {
+        const pt = await embedOne(c, a.position)
+        waypointIds.push(pt.id)
+      }
+      const path = [fromId, ...waypointIds, toId]
+      setActivePath(path)
+      setPathStep(0)
+    } finally {
+      expandingRef.current = false
+      setIsExpanding(false)
+    }
+  }, [embedOne])
+
+  // ── GPS step-through ──────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (pathStep < 0 || activePath.length === 0) return
+    if (pathStep >= activePath.length) {
+      // Journey complete
+      setActivePath([])
+      setPathStep(-1)
+      return
+    }
+    const id = activePath[pathStep]
+    navigateTo(id)
+    const timer = setTimeout(() => setPathStep(s => s + 1), 2500)
+    return () => clearTimeout(timer)
+  }, [pathStep, activePath, navigateTo])
+
+  // ── Dream mode loop ───────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!dreamMode) return
+    const interval = setInterval(() => {
+      if (expandingRef.current || !modelReady.current) return
+      const pts = pointsRef.current.filter(p => !p.isPending && !expandedIdsRef.current.has(p.id))
+      if (pts.length === 0) return
+      const sinY = Math.sin(liveCamera.yaw)
+      const cosY = Math.cos(liveCamera.yaw)
+      const lookX = -sinY, lookZ = -cosY
+      const best = pts
+        .map(pt => {
+          const dx = pt.position[0] - liveCamera.x
+          const dz = pt.position[2] - liveCamera.z
+          const dist = Math.sqrt(dx * dx + dz * dz) || 0.01
+          const alignment = (dx / dist) * lookX + (dz / dist) * lookZ
+          return { pt, score: (alignment + 1.2) / dist }
+        })
+        .sort((a, b) => b.score - a.score)[0]
+      if (best) expandPoint(best.pt.id)
+    }, 4000)
+    return () => clearInterval(interval)
+  }, [dreamMode, expandPoint])
+
   // ── Clear ─────────────────────────────────────────────────────────────────────
   const handleClear = useCallback(() => {
     setPoints([])
     setSelectedId(null)
     setExpandedIds(new Set())
     setBridgeFrom(null)
+    setGpsFrom(null)
+    setActivePath([])
+    setPathStep(-1)
     setVisitHistory([])
     setHistoryIdx(-1)
     colorIndex.current = 0
@@ -294,18 +418,37 @@ export default function Home() {
       // Search
       if (e.key === '/') { e.preventDefault(); setShowSearch(true); return }
 
+      // Import
+      if (e.key === 'i') { setShowImport(true); return }
+
       // Undo
       if ((e.metaKey || e.ctrlKey) && e.key === 'z') { e.preventDefault(); handleUndo(); return }
 
       // Home
       if (e.key === 'h') { setHomeSignal(s => s + 1); return }
 
+      // Dream toggle
+      if (e.key === 'd') { setDreamMode(v => !v); return }
+
       const pts = pointsRef.current
       const sel = selectedIdRef.current
 
       if (e.key === 'Escape') {
+        if (gpsFromRef.current) { setGpsFrom(null); return }
+        if (activePathRef.current.length > 0) { setActivePath([]); setPathStep(-1); return }
         if (bridgeFromRef.current) { setBridgeFrom(null); return }
         setSelectedId(null)
+        return
+      }
+
+      // GPS mode
+      if (e.key === 'g' && sel) {
+        if (gpsFromRef.current && gpsFromRef.current !== sel) {
+          handleGPS(gpsFromRef.current, sel)
+          setGpsFrom(null)
+        } else {
+          setGpsFrom(sel)
+        }
         return
       }
       if (pts.length === 0) return
@@ -426,7 +569,18 @@ export default function Home() {
         flyTarget={flyTarget}
         showLines={showLines}
         homeSignal={homeSignal}
-        onSelectPoint={id => { if (id) navigateTo(id); else setSelectedId(null) }}
+        activePath={activePath}
+        pathStep={pathStep}
+        onSelectPoint={id => {
+          if (!id) { setSelectedId(null); return }
+          // GPS click-to-destination
+          if (gpsFromRef.current && gpsFromRef.current !== id) {
+            handleGPS(gpsFromRef.current, id)
+            setGpsFrom(null)
+          } else {
+            navigateTo(id)
+          }
+        }}
         onExpandPoint={expandPoint}
         onContextMenu={handleContextMenu}
       />
@@ -437,9 +591,13 @@ export default function Home() {
         spread={spread}
         triggerRadius={triggerRadius}
         autoExpand={autoExpand}
+        dreamMode={dreamMode}
         showLines={showLines}
         showClusters={showClusters}
         bridgeFrom={bridgeFrom ? points.find(p => p.id === bridgeFrom)?.text ?? null : null}
+        gpsFrom={gpsFrom ? points.find(p => p.id === gpsFrom)?.text ?? null : null}
+        activePath={activePath}
+        pathStep={pathStep}
         points={points}
         selectedId={selectedId}
         visitHistory={visitHistory}
@@ -451,11 +609,14 @@ export default function Home() {
         onSpreadChange={v => { setSpread(v); spreadRef.current = v }}
         onTriggerRadiusChange={setTriggerRadius}
         onToggleAutoExpand={() => setAutoExpand(v => { autoExpandRef.current = !v; return !v })}
+        onToggleDream={() => setDreamMode(v => !v)}
         onToggleLines={() => setShowLines(v => !v)}
         onToggleClusters={() => setShowClusters(v => !v)}
         onGoHome={() => setHomeSignal(s => s + 1)}
         onCancelBridge={() => setBridgeFrom(null)}
+        onCancelGPS={() => { setGpsFrom(null); setActivePath([]); setPathStep(-1) }}
         onSearch={() => setShowSearch(true)}
+        onImport={() => setShowImport(true)}
         onNavigate={navigateTo}
       />
       {showSearch && (
@@ -463,6 +624,12 @@ export default function Home() {
           points={points.filter(p => !p.isPending)}
           onSelect={id => { navigateTo(id); expandPoint(id) }}
           onClose={() => setShowSearch(false)}
+        />
+      )}
+      {showImport && (
+        <ImportOverlay
+          onImport={handleImport}
+          onClose={() => setShowImport(false)}
         />
       )}
       {contextMenu && (

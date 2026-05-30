@@ -6,6 +6,8 @@ export interface Point {
   color: string
   baseColor?: string     // original color before cluster override
   isPending?: boolean    // true while Ollama embedding is in-flight
+  source?: string        // document name (for imported docs)
+  fullText?: string      // full passage (for imported docs; text is the short label)
 }
 
 export type ModelStatus = 'idle' | 'loading' | 'ready' | 'error'
