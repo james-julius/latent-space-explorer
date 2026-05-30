@@ -28,6 +28,7 @@ interface PointSphereProps {
   isNeighbor: boolean
   isExpanded: boolean
   onSelect: (id: string) => void
+  onContextMenu?: (pointId: string, x: number, y: number) => void
 }
 
 // Standalone spinning loader ring — used for pending points
@@ -51,7 +52,7 @@ function LoaderRing({ color }: { color: string }) {
   )
 }
 
-function PointSphere({ point, isSelected, isNeighbor, isExpanded, onSelect }: PointSphereProps) {
+function PointSphere({ point, isSelected, isNeighbor, isExpanded, onSelect, onContextMenu }: PointSphereProps) {
   const { camera }    = useThree()
   const groupRef      = useRef<THREE.Group>(null)
   const ringRef       = useRef<THREE.Mesh>(null)
@@ -92,11 +93,18 @@ function PointSphere({ point, isSelected, isNeighbor, isExpanded, onSelect }: Po
       ringRef.current.rotation.y += delta * 0.8
     }
 
+    // Depth fog on the sphere material
+    if (matRef.current) {
+      const dist = camera.position.distanceTo(currentPos.current)
+      const fog = 1 - Math.max(0, Math.min(1, (dist - 5) / (25 - 5)))
+      const target = (isPending ? 0.25 : isSelectedRef.current ? 0.95 : isNeighborRef.current ? 0.75 : 0.55) * fog
+      matRef.current.opacity = Math.max(0.03, target)
+    }
+
     if (labelRef.current) {
       const sel = isSelectedRef.current
       const nbr = isNeighborRef.current
       if (sel || nbr) {
-        // Priority labels: always full opacity
         labelRef.current.style.opacity = '1'
         labelRef.current.style.display = 'inline-flex'
       } else if (proximityVisible.has(point.id)) {
@@ -113,23 +121,32 @@ function PointSphere({ point, isSelected, isNeighbor, isExpanded, onSelect }: Po
     }
   })
 
-  const isPending = point.isPending ?? false
-  const radius    = isSelected ? R_SELECTED : isNeighbor ? R_NEIGHBOR : R_NORMAL
-  const label     = point.text.split(' ').slice(0, 4).join(' ')
+  const isPending  = point.isPending ?? false
+  const radius     = isSelected ? R_SELECTED : isNeighbor ? R_NEIGHBOR : R_NORMAL
+  const label      = point.text.split(' ').slice(0, 4).join(' ')
   const expandHint = !isExpanded && !isNeighbor && !isPending
-  const opacity   = isPending ? 0.25 : isSelected ? 0.95 : isNeighbor ? 0.75 : 0.55
+  const baseOpacity = isPending ? 0.25 : isSelected ? 0.95 : isNeighbor ? 0.75 : 0.55
+  const matRef     = useRef<THREE.MeshBasicMaterial>(null)
 
   return (
     <group ref={groupRef}>
       <mesh
         onClick={(e) => { e.stopPropagation(); if (!isPending) onSelect(point.id) }}
+        onContextMenu={(e) => {
+          e.stopPropagation()
+          if (!isPending && onContextMenu) {
+            const ne = e.nativeEvent as MouseEvent
+            onContextMenu(point.id, ne.clientX, ne.clientY)
+          }
+        }}
         onPointerOver={() => { if (!isPending) document.body.style.cursor = 'pointer' }}
         onPointerOut={() => { document.body.style.cursor = 'default' }}
       >
         <sphereGeometry args={[radius, 12, 12]} />
         <meshBasicMaterial
+          ref={matRef}
           color={point.color}
-          transparent opacity={opacity}
+          transparent opacity={baseOpacity}
           blending={THREE.AdditiveBlending}
           depthWrite={false}
         />
@@ -192,9 +209,10 @@ interface PointCloudProps {
   neighborIds: Set<string>
   expandedIds: Set<string>
   onSelect: (id: string | null) => void
+  onContextMenu?: (pointId: string, x: number, y: number) => void
 }
 
-export function PointCloud({ points, selectedId, neighborIds, expandedIds, onSelect }: PointCloudProps) {
+export function PointCloud({ points, selectedId, neighborIds, expandedIds, onSelect, onContextMenu }: PointCloudProps) {
   const { camera } = useThree()
   const pointsRef = useRef(points)
   const selectedIdRef = useRef(selectedId)
@@ -229,6 +247,7 @@ export function PointCloud({ points, selectedId, neighborIds, expandedIds, onSel
           isNeighbor={neighborIds.has(point.id)}
           isExpanded={expandedIds.has(point.id)}
           onSelect={onSelect}
+          onContextMenu={onContextMenu}
         />
       ))}
     </group>

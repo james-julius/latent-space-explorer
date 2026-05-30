@@ -4,10 +4,17 @@ export interface Point {
   embedding: number[]
   position: [number, number, number]
   color: string
-  isPending?: boolean   // true while Ollama embedding is in-flight
+  baseColor?: string     // original color before cluster override
+  isPending?: boolean    // true while Ollama embedding is in-flight
 }
 
 export type ModelStatus = 'idle' | 'loading' | 'ready' | 'error'
+
+export interface ContextMenuState {
+  x: number
+  y: number
+  pointId: string
+}
 
 export type WorkerIncoming = { type: 'embed'; text: string; id: string }
 
