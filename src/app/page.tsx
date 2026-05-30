@@ -80,25 +80,49 @@ export default function Home() {
     init()
   }, [])
 
-  // Embed a single text and add it to the scene.
-  const embedOne = useCallback(async (text: string): Promise<Point> => {
+  // Embed a single text. Shows a placeholder dot immediately, replaces on arrival.
+  // nearPos: where to cluster the placeholder (parent point position for expansions)
+  const embedOne = useCallback(async (
+    text: string,
+    nearPos?: [number, number, number]
+  ): Promise<Point> => {
     const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`
     const color = pointColor(colorIndex.current++)
-    const embedding = await ollamaEmbed(text)
-    const stub: Point = { id, text, embedding, position: [0, 0, 0], color }
 
+    // Placeholder: tight cluster around parent so spinners don't travel far
+    const jitter = (): number => (Math.random() - 0.5) * 0.12
+    const placeholderPos: [number, number, number] = nearPos
+      ? [nearPos[0] + jitter(), nearPos[1] + jitter(), nearPos[2] + jitter()]
+      : [jitter(), jitter(), jitter()]
+
+    setPoints(prev => [
+      ...prev,
+      { id, text, embedding: [], position: placeholderPos, color, isPending: true },
+    ])
+
+    // 2. Fetch embedding
+    const embedding = await ollamaEmbed(text)
+    const point: Point = { id, text, embedding, position: placeholderPos, color }
+
+    // 3. Replace placeholder with real point at its proper position
     setPoints(prev => {
-      const next = [...prev, stub]
-      if (next.length <= STABLE_THRESHOLD) {
-        const positions = projectToPositions(next)
-        return next.map((p, i) => ({ ...p, position: positions[i] }))
+      const rest = prev.filter(p => p.id !== id)
+      const realPoints = rest.filter(p => !p.isPending)
+      const next = [...rest, point]
+
+      if (next.filter(p => !p.isPending).length <= STABLE_THRESHOLD) {
+        const eligible = next.filter(p => !p.isPending)
+        const positions = projectToPositions(eligible)
+        const positioned = eligible.map((p, i) => ({ ...p, position: positions[i] }))
+        const pending = next.filter(p => p.isPending)
+        return [...positioned, ...pending]
       } else {
-        const pos = placeNearNeighbors(embedding, prev, spreadRef.current)
-        return [...prev, { ...stub, position: pos }]
+        const pos = placeNearNeighbors(embedding, realPoints, spreadRef.current)
+        return [...rest, { ...point, position: pos }]
       }
     })
 
-    return stub
+    return point
   }, [])
 
   // Expand a point by ID — generates related concepts and embeds them
@@ -114,9 +138,8 @@ export default function Home() {
     try {
       const related = await generateRelated(pt.text)
       for (const term of related) {
-        // Skip if term already exists in scene
         if (pointsRef.current.some(p => p.text.toLowerCase() === term.toLowerCase())) continue
-        await embedOne(term)
+        await embedOne(term, pt.position)  // cluster placeholders near parent
       }
     } finally {
       expandingRef.current = false

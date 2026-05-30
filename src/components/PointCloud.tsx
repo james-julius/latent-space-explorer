@@ -30,6 +30,27 @@ interface PointSphereProps {
   onSelect: (id: string) => void
 }
 
+// Standalone spinning loader ring — used for pending points
+function LoaderRing({ color }: { color: string }) {
+  const meshRef = useRef<THREE.Mesh>(null)
+  const t = useRef(0)
+  useFrame((_, delta) => {
+    if (!meshRef.current) return
+    t.current += delta * 2.5
+    meshRef.current.rotation.x = t.current
+    meshRef.current.rotation.y = t.current * 0.7
+  })
+  return (
+    <mesh ref={meshRef}>
+      <torusGeometry args={[0.055, 0.004, 6, 20]} />
+      <meshBasicMaterial
+        color={color} transparent opacity={0.7}
+        blending={THREE.AdditiveBlending} depthWrite={false}
+      />
+    </mesh>
+  )
+}
+
 function PointSphere({ point, isSelected, isNeighbor, isExpanded, onSelect }: PointSphereProps) {
   const { camera }    = useThree()
   const groupRef      = useRef<THREE.Group>(null)
@@ -37,12 +58,27 @@ function PointSphere({ point, isSelected, isNeighbor, isExpanded, onSelect }: Po
   const labelRef      = useRef<HTMLDivElement>(null)
   const targetPos     = useRef(new THREE.Vector3(...point.position))
   const currentPos    = useRef(new THREE.Vector3(...point.position))
-  const isSelectedRef = useRef(isSelected)
-  const isNeighborRef = useRef(isNeighbor)
+  const isSelectedRef  = useRef(isSelected)
+  const isNeighborRef  = useRef(isNeighbor)
+  const wasPendingRef  = useRef(point.isPending ?? false)
   isSelectedRef.current = isSelected
   isNeighborRef.current = isNeighbor
 
-  useEffect(() => { targetPos.current.set(...point.position) }, [point.position])
+  useEffect(() => {
+    const wasPending = wasPendingRef.current
+    const nowPending = point.isPending ?? false
+    wasPendingRef.current = nowPending
+
+    if (wasPending && !nowPending) {
+      // Pending just resolved → snap directly to final position, no lerp
+      currentPos.current.set(...point.position)
+      targetPos.current.set(...point.position)
+      if (groupRef.current) groupRef.current.position.set(...point.position)
+    } else {
+      // Normal move → lerp to new target
+      targetPos.current.set(...point.position)
+    }
+  }, [point.position, point.isPending])
 
   useFrame((_, delta) => {
     if (!groupRef.current) return
@@ -77,32 +113,33 @@ function PointSphere({ point, isSelected, isNeighbor, isExpanded, onSelect }: Po
     }
   })
 
-  const radius = isSelected ? R_SELECTED : isNeighbor ? R_NEIGHBOR : R_NORMAL
-  const label  = point.text.split(' ').slice(0, 4).join(' ')
-  const expandHint = !isExpanded && !isNeighbor
-
-  // Additive blending: overlapping points glow brighter (nebula effect)
-  // depthWrite:false means no z-fighting and all points always contribute
-  const opacity = isSelected ? 0.95 : isNeighbor ? 0.75 : 0.55
+  const isPending = point.isPending ?? false
+  const radius    = isSelected ? R_SELECTED : isNeighbor ? R_NEIGHBOR : R_NORMAL
+  const label     = point.text.split(' ').slice(0, 4).join(' ')
+  const expandHint = !isExpanded && !isNeighbor && !isPending
+  const opacity   = isPending ? 0.25 : isSelected ? 0.95 : isNeighbor ? 0.75 : 0.55
 
   return (
     <group ref={groupRef}>
       <mesh
-        onClick={(e) => { e.stopPropagation(); onSelect(point.id) }}
-        onPointerOver={() => { document.body.style.cursor = 'pointer' }}
+        onClick={(e) => { e.stopPropagation(); if (!isPending) onSelect(point.id) }}
+        onPointerOver={() => { if (!isPending) document.body.style.cursor = 'pointer' }}
         onPointerOut={() => { document.body.style.cursor = 'default' }}
       >
         <sphereGeometry args={[radius, 12, 12]} />
         <meshBasicMaterial
           color={point.color}
-          transparent
-          opacity={opacity}
+          transparent opacity={opacity}
           blending={THREE.AdditiveBlending}
           depthWrite={false}
         />
       </mesh>
 
-      {isSelected && (
+      {/* Pending: spinning loader ring */}
+      {isPending && <LoaderRing color={point.color} />}
+
+      {/* Selected: slow orbit ring */}
+      {isSelected && !isPending && (
         <mesh ref={ringRef}>
           <torusGeometry args={[0.06, 0.004, 8, 32]} />
           <meshBasicMaterial
@@ -132,11 +169,12 @@ function PointSphere({ point, isSelected, isNeighbor, isExpanded, onSelect }: Po
             fontFamily: 'ui-monospace, monospace',
             fontSize: isSelected ? '12px' : '10px',
             fontWeight: isSelected ? 600 : 400,
-            color: isSelected ? '#fff' : isNeighbor ? '#c8d0ff' : '#a0a0b8',
+            fontStyle: isPending ? 'italic' : 'normal',
+            color: isPending ? 'rgba(200,200,255,0.45)' : isSelected ? '#fff' : isNeighbor ? '#c8d0ff' : '#a0a0b8',
             letterSpacing: '0.03em',
             lineHeight: 1.3,
           }}>
-            {label}
+            {label}{isPending ? '…' : ''}
           </span>
           {expandHint && (
             <span style={{ fontSize: '8px', color: 'rgba(255,255,255,0.2)', lineHeight: 1 }}>+</span>
@@ -172,7 +210,7 @@ export function PointCloud({ points, selectedId, neighborIds, expandedIds, onSel
     const pts = pointsRef.current
 
     const candidates = pts
-      .filter(p => p.id !== sel && !nbr.has(p.id))
+      .filter(p => p.id !== sel && !nbr.has(p.id) && !p.isPending)
       .map(p => ({ id: p.id, dist: camera.position.distanceTo(new THREE.Vector3(...p.position)) }))
       .filter(({ dist }) => dist < LABEL_FADE_DIST)
       .sort((a, b) => a.dist - b.dist)

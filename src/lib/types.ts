@@ -4,6 +4,7 @@ export interface Point {
   embedding: number[]
   position: [number, number, number]
   color: string
+  isPending?: boolean   // true while Ollama embedding is in-flight
 }
 
 export type ModelStatus = 'idle' | 'loading' | 'ready' | 'error'
