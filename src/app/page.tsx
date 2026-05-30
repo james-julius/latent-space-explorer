@@ -422,6 +422,7 @@ export default function Home() {
         neighborIds={neighborIds}
         expandedIds={expandedIds}
         triggerRadius={triggerRadius}
+        autoExpand={autoExpand}
         flyTarget={flyTarget}
         showLines={showLines}
         homeSignal={homeSignal}

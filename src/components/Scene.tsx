@@ -182,16 +182,19 @@ function CenterOnPoints({ points }: { points: Point[] }) {
 
 // ── Proximity expander ────────────────────────────────────────────────────────
 function ProximityExpander({
-  points, expandedIds, triggerRadius, onExpand,
+  points, expandedIds, triggerRadius, enabled, onExpand,
 }: {
-  points: Point[]; expandedIds: Set<string>; triggerRadius: number; onExpand: (id: string) => void
+  points: Point[]; expandedIds: Set<string>; triggerRadius: number; enabled: boolean; onExpand: (id: string) => void
 }) {
   const { camera } = useThree()
   const cooldown = useRef<Map<string, number>>(new Map())
   const radiusRef = useRef(triggerRadius)
   radiusRef.current = triggerRadius
+  const enabledRef = useRef(enabled)
+  enabledRef.current = enabled
 
   useFrame(() => {
+    if (!enabledRef.current) return
     const now = performance.now()
     for (const pt of points) {
       if (pt.isPending || expandedIds.has(pt.id)) continue
@@ -214,6 +217,7 @@ interface SceneProps {
   neighborIds: Set<string>
   expandedIds: Set<string>
   triggerRadius: number
+  autoExpand: boolean
   flyTarget: [number, number, number] | null
   showLines: boolean
   homeSignal: number
@@ -224,7 +228,7 @@ interface SceneProps {
 
 export function Scene({
   points, selectedId, neighborIds, expandedIds,
-  triggerRadius, flyTarget, showLines, homeSignal,
+  triggerRadius, autoExpand, flyTarget, showLines, homeSignal,
   onSelectPoint, onExpandPoint, onContextMenu,
 }: SceneProps) {
   return (
@@ -244,6 +248,7 @@ export function Scene({
         points={points}
         expandedIds={expandedIds}
         triggerRadius={triggerRadius}
+        enabled={autoExpand}
         onExpand={onExpandPoint}
       />
 
