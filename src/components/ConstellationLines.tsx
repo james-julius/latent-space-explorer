@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo } from 'react'
+import { useMemo, useRef, useEffect } from 'react'
 import * as THREE from 'three'
 import type { Point } from '@/lib/types'
 
@@ -12,6 +12,13 @@ function cosineSim(a: number[], b: number[]): number {
   return dot / (Math.sqrt(na) * Math.sqrt(nb) || 1)
 }
 
+function buildLineGeometry(positions: Float32Array, colors: Float32Array) {
+  const geo = new THREE.BufferGeometry()
+  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+  geo.setAttribute('color', new THREE.BufferAttribute(colors, 3))
+  return geo
+}
+
 interface Props {
   points: Point[]
   selectedId: string | null
@@ -19,19 +26,22 @@ interface Props {
 }
 
 export function ConstellationLines({ points, selectedId, neighborIds }: Props) {
-  const { dimPositions, dimColors, brightPositions, brightColors } = useMemo(() => {
+  const dimGeoRef    = useRef<THREE.BufferGeometry>(new THREE.BufferGeometry())
+  const brightGeoRef = useRef<THREE.BufferGeometry>(new THREE.BufferGeometry())
+
+  useMemo(() => {
     const real = points.filter(p => !p.isPending && p.embedding.length > 0)
-    if (real.length < 2) return { dimPositions: [], dimColors: [], brightPositions: [], brightColors: [] }
+    if (real.length < 2) {
+      dimGeoRef.current = new THREE.BufferGeometry()
+      brightGeoRef.current = new THREE.BufferGeometry()
+      return
+    }
 
-    const dimPos: number[] = []
-    const dimCol: number[] = []
-    const brightPos: number[] = []
-    const brightCol: number[] = []
-
+    const dimPos: number[] = [], dimCol: number[] = []
+    const brtPos: number[] = [], brtCol: number[] = []
     const added = new Set<string>()
 
     for (const pt of real) {
-      // Find 2 nearest by cosine similarity
       const scored = real
         .filter(p => p.id !== pt.id)
         .map(p => ({ p, sim: cosineSim(pt.embedding, p.embedding) }))
@@ -42,55 +52,40 @@ export function ConstellationLines({ points, selectedId, neighborIds }: Props) {
         const key = [pt.id, p.id].sort().join('|')
         if (added.has(key)) continue
         added.add(key)
-
-        const isActive =
-          pt.id === selectedId || p.id === selectedId ||
-          neighborIds.has(pt.id) || neighborIds.has(p.id)
-
-        const arr = isActive ? brightPos : dimPos
-        const col = isActive ? brightCol : dimCol
-
+        const isActive = pt.id === selectedId || p.id === selectedId || neighborIds.has(pt.id) || neighborIds.has(p.id)
+        const arr = isActive ? brtPos : dimPos
+        const col = isActive ? brtCol : dimCol
         arr.push(...pt.position, ...p.position)
-        // Color: interpolate between the two point colors (simple: use first)
         const c = new THREE.Color(pt.color)
         col.push(c.r, c.g, c.b, c.r, c.g, c.b)
       }
     }
 
-    return {
-      dimPositions: new Float32Array(dimPos),
-      dimColors: new Float32Array(dimCol),
-      brightPositions: new Float32Array(brightPos),
-      brightColors: new Float32Array(brightCol),
-    }
+    dimGeoRef.current = dimPos.length
+      ? buildLineGeometry(new Float32Array(dimPos), new Float32Array(dimCol))
+      : new THREE.BufferGeometry()
+
+    brightGeoRef.current = brtPos.length
+      ? buildLineGeometry(new Float32Array(brtPos), new Float32Array(brtCol))
+      : new THREE.BufferGeometry()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [points, selectedId, neighborIds])
+
+  useEffect(() => {
+    return () => {
+      dimGeoRef.current.dispose()
+      brightGeoRef.current.dispose()
+    }
+  }, [])
 
   return (
     <group>
-      {dimPositions.length > 0 && (
-        <lineSegments>
-          <bufferGeometry>
-            <bufferAttribute attach="attributes-position" args={[dimPositions, 3]} />
-            <bufferAttribute attach="attributes-color" args={[dimColors, 3]} />
-          </bufferGeometry>
-          <lineBasicMaterial
-            vertexColors transparent opacity={0.12}
-            blending={THREE.AdditiveBlending} depthWrite={false}
-          />
-        </lineSegments>
-      )}
-      {brightPositions.length > 0 && (
-        <lineSegments>
-          <bufferGeometry>
-            <bufferAttribute attach="attributes-position" args={[brightPositions, 3]} />
-            <bufferAttribute attach="attributes-color" args={[brightColors, 3]} />
-          </bufferGeometry>
-          <lineBasicMaterial
-            vertexColors transparent opacity={0.55}
-            blending={THREE.AdditiveBlending} depthWrite={false}
-          />
-        </lineSegments>
-      )}
+      <lineSegments geometry={dimGeoRef.current}>
+        <lineBasicMaterial vertexColors transparent opacity={0.12} blending={THREE.AdditiveBlending} depthWrite={false} />
+      </lineSegments>
+      <lineSegments geometry={brightGeoRef.current}>
+        <lineBasicMaterial vertexColors transparent opacity={0.5} blending={THREE.AdditiveBlending} depthWrite={false} />
+      </lineSegments>
     </group>
   )
 }
