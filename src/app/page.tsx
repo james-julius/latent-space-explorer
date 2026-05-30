@@ -6,7 +6,7 @@ import { HUD } from '@/components/HUD'
 import { SearchOverlay } from '@/components/SearchOverlay'
 import { ContextMenu, type ContextAction } from '@/components/ContextMenu'
 import { EmbedFeed } from '@/components/EmbedFeed'
-import type { Point, ModelStatus, ContextMenuState, FeedItem } from '@/lib/types'
+import type { Point, ModelStatus, ContextMenuState } from '@/lib/types'
 import { pointColor } from '@/lib/colors'
 import { projectToPositions, nearestNeighbors, STABLE_THRESHOLD, placeNearNeighbors } from '@/lib/umap'
 import { ollamaEmbed, isEmbedModelAvailable, pullModel, generateRelated } from '@/lib/ollama'
@@ -208,7 +208,7 @@ export default function Home() {
     })
 
     return point
-  }, [])
+  }, [feedStart, feedDone])
 
   // ── Expand a point with related concepts ──────────────────────────────────────
   const expandPoint = useCallback(async (pointId: string) => {
@@ -494,6 +494,7 @@ export default function Home() {
           onClose={() => setContextMenu(null)}
         />
       )}
+      <EmbedFeed items={feedItems} />
     </main>
   )
 }
