@@ -46,9 +46,6 @@ export default function Home() {
   // ── Context menu ─────────────────────────────────────────────────────────────
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null)
 
-  // ── Embed feed ────────────────────────────────────────────────────────────────
-  const [feedItems, setFeedItems] = useState<FeedItem[]>([])
-  const MAX_FEED = 12
 
   // ── Undo ─────────────────────────────────────────────────────────────────────
   const undoStack = useRef<Point[][]>([])
@@ -152,22 +149,6 @@ export default function Home() {
     })
   }, [])
 
-  // ── Feed helpers ──────────────────────────────────────────────────────────────
-  const feedStart = useCallback((id: string, text: string, color: string) => {
-    setFeedItems(prev => {
-      const next = [...prev.slice(-(MAX_FEED - 1)), { id, text, color, status: 'embedding' as const }]
-      return next
-    })
-  }, [])
-
-  const feedDone = useCallback((id: string) => {
-    setFeedItems(prev => prev.map(f => f.id === id ? { ...f, status: 'done' as const } : f))
-    // Remove from feed after 3s
-    setTimeout(() => {
-      setFeedItems(prev => prev.filter(f => f.id !== id))
-    }, 3000)
-  }, [])
-
   // ── Embed one concept ──────────────────────────────────────────────────────────
   const embedOne = useCallback(async (
     text: string,
@@ -180,8 +161,6 @@ export default function Home() {
       ? [nearPos[0] + jitter(), nearPos[1] + jitter(), nearPos[2] + jitter()]
       : [jitter(), jitter(), jitter()]
 
-    feedStart(id, text, color)
-
     setPoints(prev => [
       ...prev,
       { id, text, embedding: [], position: placeholderPos, color, isPending: true },
@@ -189,7 +168,6 @@ export default function Home() {
 
     const embedding = await ollamaEmbed(text)
     const point: Point = { id, text, embedding, position: placeholderPos, color }
-    feedDone(id)
 
     setPoints(prev => {
       const rest = prev.filter(p => p.id !== id)
@@ -208,7 +186,7 @@ export default function Home() {
     })
 
     return point
-  }, [feedStart, feedDone])
+  }, [])
 
   // ── Expand a point with related concepts ──────────────────────────────────────
   const expandPoint = useCallback(async (pointId: string) => {
@@ -494,7 +472,7 @@ export default function Home() {
           onClose={() => setContextMenu(null)}
         />
       )}
-      <EmbedFeed items={feedItems} />
+      <EmbedFeed pendingCount={points.filter(p => p.isPending).length} />
     </main>
   )
 }

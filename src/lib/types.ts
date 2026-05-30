@@ -16,12 +16,6 @@ export interface ContextMenuState {
   pointId: string
 }
 
-export interface FeedItem {
-  id: string
-  text: string
-  color: string
-  status: 'embedding' | 'done'
-}
 
 export type WorkerIncoming = { type: 'embed'; text: string; id: string }
 
