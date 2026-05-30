@@ -266,9 +266,9 @@ export function Scene({
 
       <EffectComposer>
         <Bloom
-          luminanceThreshold={0.05}
-          luminanceSmoothing={0.9}
-          intensity={0.8}
+          luminanceThreshold={0.25}
+          luminanceSmoothing={0.7}
+          intensity={0.35}
           mipmapBlur
         />
       </EffectComposer>

@@ -13,9 +13,10 @@ const R_SELECTED = 0.038
 
 // Hard cap: only the N closest non-priority labels are shown at once.
 // Selected + neighbours are always shown regardless.
-const MAX_PROXIMITY_LABELS = 14
-const LABEL_FULL_DIST = 2.5
-const LABEL_FADE_DIST = 6.0
+const MAX_PROXIMITY_LABELS = 28
+const LABEL_FULL_DIST = 5.0    // full opacity within this distance
+const LABEL_FADE_DIST = 18.0   // invisible beyond this distance
+const FOV_HALF_DEG    = 50     // only show labels within this half-angle of look direction
 
 // Module-level set so PointCloud's useFrame can inform each PointSphere's useFrame
 // without triggering React re-renders. Safe as long as there is one PointCloud.
@@ -96,7 +97,7 @@ function PointSphere({ point, isSelected, isNeighbor, isExpanded, onSelect, onCo
     // Depth fog on the sphere material
     if (matRef.current) {
       const dist = camera.position.distanceTo(currentPos.current)
-      const fog = 1 - Math.max(0, Math.min(1, (dist - 5) / (25 - 5)))
+      const fog = 1 - Math.max(0, Math.min(1, (dist - 8) / (35 - 8)))
       const target = (isPending ? 0.25 : isSelectedRef.current ? 0.95 : isNeighborRef.current ? 0.75 : 0.55) * fog
       matRef.current.opacity = Math.max(0.03, target)
     }
@@ -114,7 +115,7 @@ function PointSphere({ point, isSelected, isNeighbor, isExpanded, onSelect, onCo
           (dist - LABEL_FULL_DIST) / (LABEL_FADE_DIST - LABEL_FULL_DIST)
         ))
         labelRef.current.style.opacity = t.toFixed(3)
-        labelRef.current.style.display = t > 0.01 ? 'inline-flex' : 'none'
+        labelRef.current.style.display = t > 0.08 ? 'inline-flex' : 'none'
       } else {
         labelRef.current.style.display = 'none'
       }
@@ -172,29 +173,31 @@ function PointSphere({ point, isSelected, isNeighbor, isExpanded, onSelect, onCo
         <div
           ref={labelRef}
           style={{
-            display: 'none', // controlled by useFrame
+            display: 'none', // controlled via useFrame
             alignItems: 'center', gap: '3px',
             userSelect: 'none',
-            background: isSelected ? 'rgba(0,0,0,0.9)' : 'rgba(0,0,0,0.72)',
-            border: `1px solid ${isSelected ? 'rgba(255,255,255,0.3)' : isNeighbor ? 'rgba(180,180,255,0.2)' : 'rgba(255,255,255,0.07)'}`,
+            // Strong dark background so it reads over any sphere colour
+            background: 'rgba(4,4,10,0.88)',
+            border: `1px solid ${isSelected ? 'rgba(255,255,255,0.35)' : isNeighbor ? 'rgba(180,180,255,0.25)' : 'rgba(255,255,255,0.1)'}`,
             borderRadius: '4px',
-            padding: isSelected ? '3px 8px' : '2px 5px',
+            padding: isSelected ? '3px 8px' : '2px 6px',
+            boxShadow: isSelected ? '0 0 12px rgba(0,0,0,0.8)' : '0 1px 8px rgba(0,0,0,0.9)',
           }}
         >
           <span style={{
             whiteSpace: 'nowrap',
             fontFamily: 'ui-monospace, monospace',
-            fontSize: isSelected ? '12px' : '10px',
+            fontSize: isSelected ? '13px' : '11px',
             fontWeight: isSelected ? 600 : 400,
             fontStyle: isPending ? 'italic' : 'normal',
-            color: isPending ? 'rgba(200,200,255,0.45)' : isSelected ? '#fff' : isNeighbor ? '#c8d0ff' : '#a0a0b8',
-            letterSpacing: '0.03em',
+            color: isPending ? 'rgba(200,200,255,0.5)' : isSelected ? '#ffffff' : isNeighbor ? '#d0d8ff' : '#b0b0c8',
+            letterSpacing: '0.02em',
             lineHeight: 1.3,
           }}>
             {label}{isPending ? '…' : ''}
           </span>
           {expandHint && (
-            <span style={{ fontSize: '8px', color: 'rgba(255,255,255,0.2)', lineHeight: 1 }}>+</span>
+            <span style={{ fontSize: '8px', color: 'rgba(255,255,255,0.22)', lineHeight: 1 }}>+</span>
           )}
         </div>
       </Html>
@@ -222,19 +225,40 @@ export function PointCloud({ points, selectedId, neighborIds, expandedIds, onSel
   neighborIdsRef.current = neighborIds
 
   // Once per frame: compute the N closest non-priority points and update the shared set
+  const lookDir = new THREE.Vector3()
+  const toPoint = new THREE.Vector3()
+  const fovCosThreshold = Math.cos((FOV_HALF_DEG * Math.PI) / 180)
+
   useFrame(() => {
-    const sel = selectedIdRef.current
-    const nbr = neighborIdsRef.current
-    const pts = pointsRef.current
+    const sel  = selectedIdRef.current
+    const nbr  = neighborIdsRef.current
+    const pts  = pointsRef.current
 
-    const candidates = pts
-      .filter(p => p.id !== sel && !nbr.has(p.id) && !p.isPending)
-      .map(p => ({ id: p.id, dist: camera.position.distanceTo(new THREE.Vector3(...p.position)) }))
-      .filter(({ dist }) => dist < LABEL_FADE_DIST)
-      .sort((a, b) => a.dist - b.dist)
-      .slice(0, MAX_PROXIMITY_LABELS)
+    camera.getWorldDirection(lookDir)
 
-    proximityVisible = new Set(candidates.map(c => c.id))
+    const candidates: { id: string; score: number }[] = []
+
+    for (const p of pts) {
+      if (p.id === sel || nbr.has(p.id) || p.isPending) continue
+
+      toPoint.set(...p.position).sub(camera.position)
+      const dist = toPoint.length()
+      if (dist > LABEL_FADE_DIST) continue
+
+      toPoint.divideScalar(dist) // normalize in place
+      const alignment = lookDir.dot(toPoint) // 1 = directly ahead, -1 = behind
+
+      // Cull anything outside the FOV cone
+      if (alignment < fovCosThreshold) continue
+
+      // Score: prefer points that are close AND directly ahead
+      // The (alignment + 1) term ranges 0–2, so forward points score much higher
+      const score = (alignment + 1) / Math.max(dist, 0.1)
+      candidates.push({ id: p.id, score })
+    }
+
+    candidates.sort((a, b) => b.score - a.score)
+    proximityVisible = new Set(candidates.slice(0, MAX_PROXIMITY_LABELS).map(c => c.id))
   })
 
   return (
