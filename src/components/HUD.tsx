@@ -103,22 +103,38 @@ export function HUD({
             status === 'loading' ? 'bg-amber-400 animate-pulse' :
             status === 'error' ? 'bg-red-400' : 'bg-white/20'
           }`} />
-          <span className="text-white/30 text-xs font-mono">
+          <span className={`text-xs font-mono ${dreamMode ? 'text-violet-400/70 animate-pulse' : 'text-white/30'}`}>
             {status === 'loading'
               ? loadProgress > 0 ? `pulling model ${loadProgress}%` : 'connecting…'
               : status === 'error' ? 'ollama error'
+              : gpsFrom ? `GPS from "${gpsFrom.slice(0, 20)}" — click destination`
+              : activePath.length > 0 ? `journey · step ${pathStep + 1} / ${activePath.length}`
+              : bridgeFrom ? `bridge from "${bridgeFrom.slice(0, 20)}" — select target`
+              : dreamMode ? `dreaming… ${real.length} pts`
               : isExpanding ? `expanding… ${real.length} pts`
-              : bridgeFrom ? `bridging from "${bridgeFrom}" — select target`
               : `${real.length} pt${real.length !== 1 ? 's' : ''}`}
           </span>
         </div>
 
         <div className="pointer-events-auto flex items-center gap-2">
+          {activePath.length > 0 && (
+            <button onClick={onCancelGPS} className="text-amber-400/70 hover:text-amber-400 text-xs font-mono transition-colors">
+              stop journey
+            </button>
+          )}
+          {gpsFrom && !activePath.length && (
+            <button onClick={onCancelGPS} className="text-amber-400/70 hover:text-amber-400 text-xs font-mono transition-colors">
+              cancel gps
+            </button>
+          )}
           {bridgeFrom && (
             <button onClick={onCancelBridge} className="text-amber-400/70 hover:text-amber-400 text-xs font-mono transition-colors">
               cancel bridge
             </button>
           )}
+          <button onClick={onImport} className="text-white/25 hover:text-white/60 text-xs font-mono transition-colors">
+            ↑ import
+          </button>
           <button onClick={onSearch} className="text-white/25 hover:text-white/60 text-xs font-mono transition-colors">
             / search
           </button>
@@ -166,14 +182,25 @@ export function HUD({
 
       {/* ── Right panel: selected point ──────────────────────────────────── */}
       {selectedPoint && (
-        <div className="absolute right-3 top-1/2 -translate-y-1/2 z-10 w-56">
+        <div className="absolute right-3 top-1/2 -translate-y-1/2 z-10 w-64">
           <div className="bg-black/70 backdrop-blur border border-white/10 rounded-xl p-3 space-y-2.5">
+            {/* Source label for imported docs */}
+            {selectedPoint.source && (
+              <div className="text-white/25 text-xs font-mono truncate">from: {selectedPoint.source}</div>
+            )}
             <div className="flex items-start gap-2">
               <div
                 className="w-2 h-2 rounded-full mt-1 flex-shrink-0"
                 style={{ background: selectedPoint.color, boxShadow: `0 0 6px ${selectedPoint.color}` }}
               />
-              <p className="text-white text-sm leading-snug">{selectedPoint.text}</p>
+              {/* Show full passage for imported docs, short label otherwise */}
+              {selectedPoint.fullText ? (
+                <p className="text-white/80 text-xs leading-relaxed max-h-32 overflow-y-auto pr-1 font-mono">
+                  {selectedPoint.fullText}
+                </p>
+              ) : (
+                <p className="text-white text-sm leading-snug">{selectedPoint.text}</p>
+              )}
             </div>
 
             {neighbors.length > 0 && (
@@ -223,6 +250,7 @@ export function HUD({
           {/* Toggle row */}
           <div className="flex flex-wrap gap-1.5">
             <ToggleBtn label="auto-expand" active={autoExpand} onClick={onToggleAutoExpand} />
+            <ToggleBtn label="dream" active={dreamMode} onClick={onToggleDream} />
             <ToggleBtn label="lines" active={showLines} onClick={onToggleLines} />
             <ToggleBtn label="clusters" active={showClusters} onClick={onToggleClusters} />
           </div>
@@ -274,7 +302,7 @@ export function HUD({
           <span className="absolute right-4 top-1/2 -translate-y-1/2 text-white/15 text-xs font-mono">↵</span>
         </div>
         <div className="text-center text-white/15 text-xs font-mono mt-1.5">
-          wasd · e/q · shift=fast · tab neighbor · b bridge · / search · h home
+          wasd · e/q · shift=fast · tab neighbor · g gps · d dream · i import · / search
         </div>
       </div>
     </>

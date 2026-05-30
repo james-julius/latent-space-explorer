@@ -235,12 +235,10 @@ function PathLine({ points, activePath, pathStep }: {
   return (
     <group>
       {/* Path line */}
-      <line geometry={geoRef.current}>
-        <lineBasicMaterial
-          color="#fbbf24" transparent opacity={0.5}
-          blending={THREE.AdditiveBlending} depthWrite={false}
-        />
-      </line>
+      <primitive object={new THREE.Line(geoRef.current, new THREE.LineBasicMaterial({
+        color: '#fbbf24', transparent: true, opacity: 0.5,
+        blending: THREE.AdditiveBlending, depthWrite: false,
+      }))} />
       {/* Current waypoint highlight */}
       {currentPt && (
         <mesh position={currentPt.position}>
