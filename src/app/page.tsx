@@ -22,6 +22,7 @@ export default function Home() {
   const [isExpanding, setIsExpanding] = useState(false)
   const [spread, setSpread] = useState(0.4)
   const [triggerRadius, setTriggerRadius] = useState(1.8)
+  const [flyTarget, setFlyTarget] = useState<[number,number,number] | null>(null)
   const spreadRef = useRef(0.4)
   const colorIndex = useRef(0)
   const modelReady = useRef(false)
@@ -130,6 +131,7 @@ export default function Home() {
     expandingRef.current = true
     try {
       const pt = await embedOne(text)
+      setFlyTarget(pt.position)
       setExpandedIds(prev => new Set(prev).add(pt.id))
       const related = await generateRelated(text)
       for (const term of related) {
@@ -222,6 +224,7 @@ export default function Home() {
         neighborIds={neighborIds}
         expandedIds={expandedIds}
         triggerRadius={triggerRadius}
+        flyTarget={flyTarget}
         onSelectPoint={setSelectedId}
         onExpandPoint={expandPoint}
       />

@@ -16,3 +16,7 @@ html, body {
   background: #050508;
   color: #fff;
 }
+
+/* Hide Next.js dev overlay badge */
+nextjs-portal { display: none !important; }
+[data-nextjs-dialog-overlay] { display: none !important; }

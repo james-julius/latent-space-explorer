@@ -6,9 +6,22 @@ import { Html } from '@react-three/drei'
 import * as THREE from 'three'
 import type { Point } from '@/lib/types'
 
-const LABEL_FULL_DIST  = 1.0   // fully visible within this distance
-const LABEL_FADE_DIST  = 2.8   // fully invisible beyond this distance
+// Tiny radii so the cloud reads as a nebula, not soap bubbles
+const R_NORMAL   = 0.016
+const R_NEIGHBOR = 0.022
+const R_SELECTED = 0.038
 
+// Hard cap: only the N closest non-priority labels are shown at once.
+// Selected + neighbours are always shown regardless.
+const MAX_PROXIMITY_LABELS = 14
+const LABEL_FULL_DIST = 2.5
+const LABEL_FADE_DIST = 6.0
+
+// Module-level set so PointCloud's useFrame can inform each PointSphere's useFrame
+// without triggering React re-renders. Safe as long as there is one PointCloud.
+let proximityVisible: Set<string> = new Set()
+
+// ── Per-point sphere ──────────────────────────────────────────────────────────
 interface PointSphereProps {
   point: Point
   isSelected: boolean
@@ -18,7 +31,7 @@ interface PointSphereProps {
 }
 
 function PointSphere({ point, isSelected, isNeighbor, isExpanded, onSelect }: PointSphereProps) {
-  const { camera } = useThree()
+  const { camera }    = useThree()
   const groupRef      = useRef<THREE.Group>(null)
   const ringRef       = useRef<THREE.Mesh>(null)
   const labelRef      = useRef<HTMLDivElement>(null)
@@ -34,7 +47,6 @@ function PointSphere({ point, isSelected, isNeighbor, isExpanded, onSelect }: Po
   useFrame((_, delta) => {
     if (!groupRef.current) return
 
-    // Lerp position
     const lerpFactor = 1 - Math.pow(0.01, delta)
     currentPos.current.lerp(targetPos.current, lerpFactor)
     groupRef.current.position.copy(currentPos.current)
@@ -44,26 +56,34 @@ function PointSphere({ point, isSelected, isNeighbor, isExpanded, onSelect }: Po
       ringRef.current.rotation.y += delta * 0.8
     }
 
-    // Distance-based label opacity — direct DOM, no React re-render
     if (labelRef.current) {
-      if (isSelected || isNeighbor) {
-        // Selected + neighbours always readable
+      const sel = isSelectedRef.current
+      const nbr = isNeighborRef.current
+      if (sel || nbr) {
+        // Priority labels: always full opacity
         labelRef.current.style.opacity = '1'
-      } else {
+        labelRef.current.style.display = 'inline-flex'
+      } else if (proximityVisible.has(point.id)) {
+        // Proximity labels: fade by distance
         const dist = camera.position.distanceTo(currentPos.current)
         const t = 1 - Math.max(0, Math.min(1,
           (dist - LABEL_FULL_DIST) / (LABEL_FADE_DIST - LABEL_FULL_DIST)
         ))
         labelRef.current.style.opacity = t.toFixed(3)
+        labelRef.current.style.display = t > 0.01 ? 'inline-flex' : 'none'
+      } else {
+        labelRef.current.style.display = 'none'
       }
     }
   })
 
-  const emissiveIntensity = isSelected ? 1.5 : isNeighbor ? 0.8 : 0.4
-  const radius      = isSelected ? 0.07 : isNeighbor ? 0.06 : 0.05
-  const label       = point.text.split(' ').slice(0, 4).join(' ')
-  const labelColor  = isSelected ? '#ffffff' : isNeighbor ? '#d0d0ff' : '#8888aa'
-  const expandHint  = !isExpanded
+  const radius = isSelected ? R_SELECTED : isNeighbor ? R_NEIGHBOR : R_NORMAL
+  const label  = point.text.split(' ').slice(0, 4).join(' ')
+  const expandHint = !isExpanded && !isNeighbor
+
+  // Additive blending: overlapping points glow brighter (nebula effect)
+  // depthWrite:false means no z-fighting and all points always contribute
+  const opacity = isSelected ? 0.95 : isNeighbor ? 0.75 : 0.55
 
   return (
     <group ref={groupRef}>
@@ -72,22 +92,24 @@ function PointSphere({ point, isSelected, isNeighbor, isExpanded, onSelect }: Po
         onPointerOver={() => { document.body.style.cursor = 'pointer' }}
         onPointerOut={() => { document.body.style.cursor = 'default' }}
       >
-        <sphereGeometry args={[radius, 20, 20]} />
-        <meshStandardMaterial
+        <sphereGeometry args={[radius, 12, 12]} />
+        <meshBasicMaterial
           color={point.color}
-          emissive={point.color}
-          emissiveIntensity={emissiveIntensity}
           transparent
-          opacity={isSelected ? 1 : isNeighbor ? 0.9 : 0.75}
+          opacity={opacity}
+          blending={THREE.AdditiveBlending}
+          depthWrite={false}
         />
       </mesh>
 
       {isSelected && (
         <mesh ref={ringRef}>
-          <torusGeometry args={[0.13, 0.008, 8, 32]} />
-          <meshStandardMaterial
-            color={point.color} emissive={point.color}
-            emissiveIntensity={2} transparent opacity={0.85}
+          <torusGeometry args={[0.06, 0.004, 8, 32]} />
+          <meshBasicMaterial
+            color={point.color}
+            transparent opacity={0.9}
+            blending={THREE.AdditiveBlending}
+            depthWrite={false}
           />
         </mesh>
       )}
@@ -96,12 +118,13 @@ function PointSphere({ point, isSelected, isNeighbor, isExpanded, onSelect }: Po
         <div
           ref={labelRef}
           style={{
-            display: 'inline-flex', alignItems: 'center', gap: '3px',
-            userSelect: 'none', transition: 'none',
-            background: isSelected ? 'rgba(0,0,0,0.85)' : 'rgba(0,0,0,0.7)',
-            border: `1px solid ${isSelected ? 'rgba(255,255,255,0.25)' : 'rgba(255,255,255,0.08)'}`,
+            display: 'none', // controlled by useFrame
+            alignItems: 'center', gap: '3px',
+            userSelect: 'none',
+            background: isSelected ? 'rgba(0,0,0,0.9)' : 'rgba(0,0,0,0.72)',
+            border: `1px solid ${isSelected ? 'rgba(255,255,255,0.3)' : isNeighbor ? 'rgba(180,180,255,0.2)' : 'rgba(255,255,255,0.07)'}`,
             borderRadius: '4px',
-            padding: isSelected ? '3px 7px' : '2px 5px',
+            padding: isSelected ? '3px 8px' : '2px 5px',
           }}
         >
           <span style={{
@@ -109,14 +132,14 @@ function PointSphere({ point, isSelected, isNeighbor, isExpanded, onSelect }: Po
             fontFamily: 'ui-monospace, monospace',
             fontSize: isSelected ? '12px' : '10px',
             fontWeight: isSelected ? 600 : 400,
-            color: isSelected ? '#fff' : isNeighbor ? '#c8c8ff' : '#aaa',
+            color: isSelected ? '#fff' : isNeighbor ? '#c8d0ff' : '#a0a0b8',
             letterSpacing: '0.03em',
             lineHeight: 1.3,
           }}>
             {label}
           </span>
-          {expandHint && !isNeighbor && (
-            <span style={{ fontSize: '8px', color: 'rgba(255,255,255,0.25)', lineHeight: 1 }}>+</span>
+          {expandHint && (
+            <span style={{ fontSize: '8px', color: 'rgba(255,255,255,0.2)', lineHeight: 1 }}>+</span>
           )}
         </div>
       </Html>
@@ -124,6 +147,7 @@ function PointSphere({ point, isSelected, isNeighbor, isExpanded, onSelect }: Po
   )
 }
 
+// ── Parent: manages the proximity label budget ────────────────────────────────
 interface PointCloudProps {
   points: Point[]
   selectedId: string | null
@@ -133,6 +157,30 @@ interface PointCloudProps {
 }
 
 export function PointCloud({ points, selectedId, neighborIds, expandedIds, onSelect }: PointCloudProps) {
+  const { camera } = useThree()
+  const pointsRef = useRef(points)
+  const selectedIdRef = useRef(selectedId)
+  const neighborIdsRef = useRef(neighborIds)
+  pointsRef.current = points
+  selectedIdRef.current = selectedId
+  neighborIdsRef.current = neighborIds
+
+  // Once per frame: compute the N closest non-priority points and update the shared set
+  useFrame(() => {
+    const sel = selectedIdRef.current
+    const nbr = neighborIdsRef.current
+    const pts = pointsRef.current
+
+    const candidates = pts
+      .filter(p => p.id !== sel && !nbr.has(p.id))
+      .map(p => ({ id: p.id, dist: camera.position.distanceTo(new THREE.Vector3(...p.position)) }))
+      .filter(({ dist }) => dist < LABEL_FADE_DIST)
+      .sort((a, b) => a.dist - b.dist)
+      .slice(0, MAX_PROXIMITY_LABELS)
+
+    proximityVisible = new Set(candidates.map(c => c.id))
+  })
+
   return (
     <group>
       {points.map(point => (

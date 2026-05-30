@@ -30,12 +30,12 @@ export function projectToPositions(points: Point[]): [number, number, number][] 
   const nNeighbors = Math.min(15, n - 1)
 
   try {
-    const umap = new UMAP({ nComponents: 3, nNeighbors, minDist: 0.2, spread: 2.0, nEpochs: n < 30 ? 300 : 200 })
+    const umap = new UMAP({ nComponents: 3, nNeighbors, minDist: 0.3, spread: 3.0, nEpochs: n < 30 ? 300 : 200 })
     const result = umap.fit(embeddings)
     const allVals = result.flat()
     const min = Math.min(...allVals)
     const max = Math.max(...allVals)
-    const scale = 4 / (max - min || 1)
+    const scale = 7 / (max - min || 1)
     return result.map(([x, y, z]) => [
       (x - (min + max) / 2) * scale,
       (y - (min + max) / 2) * scale,

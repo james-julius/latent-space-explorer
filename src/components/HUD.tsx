@@ -188,10 +188,8 @@ export function HUD({
             ↵
           </div>
         </div>
-        <div className="text-center text-white/20 text-xs font-mono mt-2 space-x-3">
-          <span>wasd move · e/q up/down · mouse/arrows look</span>
-          <span>·</span>
-          <span>tab neighbor · f expand · 1–5 preset</span>
+        <div className="text-center text-white/15 text-xs font-mono mt-2">
+          wasd · e/q · mouse look · tab neighbor · f expand
         </div>
       </div>
 

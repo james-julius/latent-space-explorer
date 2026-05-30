@@ -107,24 +107,50 @@ function CameraController() {
   return null
 }
 
+// ── Camera travel: flies smoothly to a target point ──────────────────────────
+interface CameraFlyToProps {
+  target: [number, number, number] | null
+}
+
+function CameraFlyTo({ target }: CameraFlyToProps) {
+  const { camera } = useThree()
+  const flyTarget = useRef<THREE.Vector3 | null>(null)
+  const flying = useRef(false)
+
+  useEffect(() => {
+    if (!target) return
+    // Hover a bit in front of the point (offset on Z so we look at it)
+    flyTarget.current = new THREE.Vector3(target[0], target[1], target[2] + 6)
+    flying.current = true
+  }, [target])
+
+  useFrame((_, delta) => {
+    if (!flying.current || !flyTarget.current) return
+    const t = 1 - Math.pow(0.001, delta) // smooth exponential ease
+    camera.position.lerp(flyTarget.current, t)
+    if (camera.position.distanceTo(flyTarget.current) < 0.05) {
+      flying.current = false
+    }
+  })
+
+  return null
+}
+
 // ── One-shot camera centre: fires when points first exist, never again ─────────
 function CenterOnPoints({ points }: { points: Point[] }) {
   const { camera } = useThree()
   const done = useRef(false)
 
   useEffect(() => {
-    // Only fire once, and only once we have enough points to have a real centroid
     if (done.current || points.length < 3) return
     done.current = true
-
     const cx = points.reduce((s, p) => s + p.position[0], 0) / points.length
     const cy = points.reduce((s, p) => s + p.position[1], 0) / points.length
     const cz = points.reduce((s, p) => s + p.position[2], 0) / points.length
-
-    camera.position.set(cx, cy, cz + 8)
+    camera.position.set(cx, cy, cz + 14)
     camera.rotation.set(0, 0, 0)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [points.length]) // only re-check when count changes, not on every frame
+  }, [points.length])
 
   return null
 }
@@ -167,27 +193,29 @@ interface SceneProps {
   neighborIds: Set<string>
   expandedIds: Set<string>
   triggerRadius: number
+  flyTarget: [number, number, number] | null
   onSelectPoint: (id: string | null) => void
   onExpandPoint: (id: string) => void
 }
 
 export function Scene({
-  points, selectedId, neighborIds, expandedIds, triggerRadius,
+  points, selectedId, neighborIds, expandedIds, triggerRadius, flyTarget,
   onSelectPoint, onExpandPoint,
 }: SceneProps) {
   return (
     <Canvas
-      camera={{ position: [0, 0, 8], fov: 75 }}
+      camera={{ position: [0, 0, 14], fov: 72 }}
       style={{ background: '#050508' }}
       onPointerMissed={() => onSelectPoint(null)}
     >
       <ambientLight intensity={0.3} />
       <pointLight position={[10, 10, 10]} intensity={1} />
       <pointLight position={[-10, -10, -10]} intensity={0.5} color="#4466ff" />
-      <Stars radius={50} depth={30} count={3000} factor={3} fade />
+      <Stars radius={80} depth={60} count={1500} factor={2} fade />
 
       <CameraController />
       <CenterOnPoints points={points} />
+      <CameraFlyTo target={flyTarget} />
 
       <ProximityExpander
         points={points}
