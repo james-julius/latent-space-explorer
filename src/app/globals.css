@@ -4,10 +4,13 @@
   --font-mono: var(--font-geist-mono);
 }
 
+/* NOTE: do not add `margin: 0; padding: 0` to a bare `*` selector here.
+   Tailwind v4 utilities live in @layer utilities, and an unlayered universal
+   reset beats every layered utility in the cascade — silently zeroing out
+   p-*, px-*, m-*, space-y-*, etc. across the whole app. Preflight already
+   handles the reset. */
 * {
   box-sizing: border-box;
-  margin: 0;
-  padding: 0;
 }
 
 html, body {

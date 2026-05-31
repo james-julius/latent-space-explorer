@@ -12,6 +12,7 @@ interface HUDProps {
   isExpanding: boolean
   spread: number
   triggerRadius: number
+  flySpeed: number
   autoExpand: boolean
   dreamMode: boolean
   showLines: boolean
@@ -30,6 +31,7 @@ interface HUDProps {
   onUndo: () => void
   onSpreadChange: (v: number) => void
   onTriggerRadiusChange: (v: number) => void
+  onFlySpeedChange: (v: number) => void
   onToggleAutoExpand: () => void
   onToggleDream: () => void
   onToggleLines: () => void
@@ -39,6 +41,7 @@ interface HUDProps {
   onCancelGPS: () => void
   onSearch: () => void
   onImport: () => void
+  onHelp: () => void
   onNavigate: (id: string) => void
 }
 
@@ -48,10 +51,10 @@ function Toggle({ label, active, onClick }: { label: string; active: boolean; on
     <button
       onClick={onClick}
       className={`text-[10px] font-mono transition-colors text-left ${
-        active ? 'text-white/80' : 'text-white/20 hover:text-white/45'
+        active ? 'text-white/90' : 'text-white/45 hover:text-white/70'
       }`}
     >
-      <span className={`mr-1.5 ${active ? 'text-white/60' : 'text-white/15'}`}>{active ? '◆' : '◇'}</span>
+      <span className={`mr-1.5 ${active ? 'text-white/70' : 'text-white/30'}`}>{active ? '◆' : '◇'}</span>
       {label}
     </button>
   )
@@ -59,13 +62,13 @@ function Toggle({ label, active, onClick }: { label: string; active: boolean; on
 
 export function HUD({
   status, loadProgress, isExpanding,
-  spread, triggerRadius, autoExpand, dreamMode, showLines, showClusters,
+  spread, triggerRadius, flySpeed, autoExpand, dreamMode, showLines, showClusters,
   bridgeFrom, gpsFrom, activePath, pathStep,
   points, selectedId, visitHistory, historyIdx,
   onEmbed, onLoadPreset, onClear, onUndo,
-  onSpreadChange, onTriggerRadiusChange,
+  onSpreadChange, onTriggerRadiusChange, onFlySpeedChange,
   onToggleAutoExpand, onToggleDream, onToggleLines, onToggleClusters,
-  onGoHome, onCancelBridge, onCancelGPS, onSearch, onImport, onNavigate,
+  onGoHome, onCancelBridge, onCancelGPS, onSearch, onImport, onHelp, onNavigate,
 }: HUDProps) {
   const [input, setInput] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
@@ -116,13 +119,13 @@ export function HUD({
         border-b border-white/[0.06] pointer-events-none">
 
         {/* Identity */}
-        <span className="text-white/18 text-[9px] font-mono tracking-[0.25em] uppercase shrink-0">LSE</span>
+        <span className="text-white/40 text-[9px] font-mono tracking-[0.25em] uppercase shrink-0">LSE</span>
         <div className={`w-[5px] h-[5px] rounded-full shrink-0 ${statusDot}`} />
 
         {/* Status / mode */}
         <span className={`text-[10px] font-mono truncate ${
-          dreamMode ? 'text-violet-300/50' :
-          modeLabel ? 'text-amber-300/60' : 'text-white/22'
+          dreamMode ? 'text-violet-300/80' :
+          modeLabel ? 'text-amber-300/85' : 'text-white/50'
         }`}>
           {status === 'loading'
             ? loadProgress > 0 ? `${loadProgress}%` : 'connecting'
@@ -134,23 +137,27 @@ export function HUD({
         <div className="ml-auto flex items-center gap-4 shrink-0 pointer-events-auto">
           {(activePath.length > 0 || gpsFrom) && (
             <button onClick={onCancelGPS}
-              className="text-amber-300/40 hover:text-amber-300/70 text-[10px] font-mono transition-colors">
+              className="text-amber-300/70 hover:text-amber-300 text-[10px] font-mono transition-colors">
               stop
             </button>
           )}
           {bridgeFrom && (
             <button onClick={onCancelBridge}
-              className="text-amber-300/40 hover:text-amber-300/70 text-[10px] font-mono transition-colors">
+              className="text-amber-300/70 hover:text-amber-300 text-[10px] font-mono transition-colors">
               stop
             </button>
           )}
-          <button onClick={onImport}  className="text-white/18 hover:text-white/50 text-[10px] font-mono transition-colors">import</button>
-          <button onClick={onSearch}  className="text-white/18 hover:text-white/50 text-[10px] font-mono transition-colors">search</button>
-          <button onClick={onGoHome}  className="text-white/18 hover:text-white/50 text-[10px] font-mono transition-colors">home</button>
+          <button onClick={onImport}  className="text-white/45 hover:text-white/85 text-[10px] font-mono transition-colors">import</button>
+          <button onClick={onSearch}  className="text-white/45 hover:text-white/85 text-[10px] font-mono transition-colors">search</button>
+          <button onClick={onGoHome}  className="text-white/45 hover:text-white/85 text-[10px] font-mono transition-colors">home</button>
           {real.length > 0 && <>
-            <button onClick={onUndo}  className="text-white/18 hover:text-white/50 text-[10px] font-mono transition-colors">undo</button>
-            <button onClick={onClear} className="text-white/18 hover:text-white/50 text-[10px] font-mono transition-colors">clear</button>
+            <button onClick={onUndo}  className="text-white/45 hover:text-white/85 text-[10px] font-mono transition-colors">undo</button>
+            <button onClick={onClear} className="text-white/45 hover:text-white/85 text-[10px] font-mono transition-colors">clear</button>
           </>}
+          <button onClick={onHelp} aria-label="help"
+            className="flex items-center justify-center w-4 h-4 rounded-full
+              border border-white/30 text-white/55 hover:text-white hover:border-white/60
+              text-[10px] font-mono leading-none transition-colors">?</button>
         </div>
       </div>
 
@@ -162,11 +169,11 @@ export function HUD({
             onClick={() => onLoadPreset(preset.texts)}
             disabled={!canEmbed}
             className="flex items-center gap-2 w-full px-3 py-1.5 text-left
-              text-white/25 hover:text-white/60 hover:bg-white/[0.025]
-              disabled:opacity-15 disabled:cursor-not-allowed
+              text-white/50 hover:text-white/90 hover:bg-white/[0.04]
+              disabled:opacity-25 disabled:cursor-not-allowed
               transition-colors border-b border-white/[0.04] last:border-b-0"
           >
-            <span className="text-white/12 text-[9px] font-mono w-2.5 shrink-0">{i + 1}</span>
+            <span className="text-white/30 text-[9px] font-mono w-2.5 shrink-0">{i + 1}</span>
             <span className="text-[10px] font-mono">{preset.name}</span>
           </button>
         ))}
@@ -252,19 +259,27 @@ export function HUD({
           <div className="border-t border-white/[0.05] pt-2 space-y-1.5">
             {/* Spread */}
             <div className="flex items-center gap-2">
-              <span className="text-white/18 text-[9px] font-mono w-10 shrink-0">spread</span>
+              <span className="text-white/45 text-[9px] font-mono w-12 shrink-0">spread</span>
               <input type="range" min="0.1" max="2.0" step="0.1" value={spread}
                 onChange={e => onSpreadChange(parseFloat(e.target.value))}
-                className="flex-1 cursor-pointer" style={{ accentColor: 'rgba(255,255,255,0.3)', height: '2px' }} />
-              <span className="text-white/18 text-[9px] font-mono w-5 text-right shrink-0">{spread.toFixed(1)}</span>
+                className="flex-1 cursor-pointer" style={{ accentColor: 'rgba(255,255,255,0.5)', height: '2px' }} />
+              <span className="text-white/55 text-[9px] font-mono w-6 text-right shrink-0">{spread.toFixed(1)}</span>
             </div>
             {/* Radius */}
             <div className="flex items-center gap-2">
-              <span className="text-white/18 text-[9px] font-mono w-10 shrink-0">radius</span>
+              <span className="text-white/45 text-[9px] font-mono w-12 shrink-0">radius</span>
               <input type="range" min="0.5" max="5.0" step="0.25" value={triggerRadius}
                 onChange={e => onTriggerRadiusChange(parseFloat(e.target.value))}
-                className="flex-1 cursor-pointer" style={{ accentColor: 'rgba(255,255,255,0.3)', height: '2px' }} />
-              <span className="text-white/18 text-[9px] font-mono w-5 text-right shrink-0">{triggerRadius.toFixed(1)}</span>
+                className="flex-1 cursor-pointer" style={{ accentColor: 'rgba(255,255,255,0.5)', height: '2px' }} />
+              <span className="text-white/55 text-[9px] font-mono w-6 text-right shrink-0">{triggerRadius.toFixed(1)}</span>
+            </div>
+            {/* Fly speed */}
+            <div className="flex items-center gap-2">
+              <span className="text-white/45 text-[9px] font-mono w-12 shrink-0">fly speed</span>
+              <input type="range" min="0.2" max="5.0" step="0.2" value={flySpeed}
+                onChange={e => onFlySpeedChange(parseFloat(e.target.value))}
+                className="flex-1 cursor-pointer" style={{ accentColor: 'rgba(255,255,255,0.5)', height: '2px' }} />
+              <span className="text-white/55 text-[9px] font-mono w-6 text-right shrink-0">{flySpeed.toFixed(1)}×</span>
             </div>
           </div>
         </div>
@@ -297,7 +312,7 @@ export function HUD({
 
       {/* ── Hint line at very bottom ──────────────────────────────────────── */}
       <div className="absolute bottom-0 left-1/2 -translate-x-1/2 z-0
-        text-white/[0.08] text-[8px] font-mono tracking-wide pb-0.5 whitespace-nowrap pointer-events-none"
+        text-white/25 text-[8px] font-mono tracking-wide pb-0.5 whitespace-nowrap pointer-events-none"
         style={{ bottom: '-1px' }}>
         wasd · e/q · tab · g gps · d dream · i import · / search · h home
       </div>

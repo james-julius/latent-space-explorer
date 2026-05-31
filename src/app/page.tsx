@@ -7,6 +7,7 @@ import { SearchOverlay } from '@/components/SearchOverlay'
 import { ContextMenu, type ContextAction } from '@/components/ContextMenu'
 import { EmbedFeed } from '@/components/EmbedFeed'
 import { ImportOverlay } from '@/components/ImportOverlay'
+import { HelpOverlay } from '@/components/HelpOverlay'
 import type { Point, ModelStatus, ContextMenuState } from '@/lib/types'
 import { pointColor } from '@/lib/colors'
 import { projectToPositions, nearestNeighbors, STABLE_THRESHOLD, placeNearNeighbors } from '@/lib/umap'
@@ -65,6 +66,10 @@ export default function Home() {
   // ── Import ────────────────────────────────────────────────────────────────────
   const [showImport, setShowImport] = useState(false)
 
+  // ── Help / welcome ────────────────────────────────────────────────────────────
+  const [showHelp, setShowHelp] = useState(false)
+  const [firstVisit, setFirstVisit] = useState(false)
+
 
   // ── Undo ─────────────────────────────────────────────────────────────────────
   const undoStack = useRef<Point[][]>([])
@@ -115,6 +120,24 @@ export default function Home() {
   useEffect(() => {
     try { localStorage.setItem('lse-expanded', JSON.stringify([...expandedIds])) } catch { /* quota */ }
   }, [expandedIds])
+
+  // ── First-visit welcome ───────────────────────────────────────────────────────
+  useEffect(() => {
+    try {
+      if (!localStorage.getItem('lse-welcomed')) {
+        setFirstVisit(true)
+        setShowHelp(true)
+      }
+    } catch { /* ignore */ }
+  }, [])
+
+  const closeHelp = useCallback(() => {
+    setShowHelp(false)
+    if (firstVisit) {
+      try { localStorage.setItem('lse-welcomed', '1') } catch { /* quota */ }
+      setFirstVisit(false)
+    }
+  }, [firstVisit])
 
   // ── Ollama init ───────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -592,6 +615,7 @@ export default function Home() {
         isExpanding={isExpanding}
         spread={spread}
         triggerRadius={triggerRadius}
+        flySpeed={flySpeed}
         autoExpand={autoExpand}
         dreamMode={dreamMode}
         showLines={showLines}
@@ -610,6 +634,7 @@ export default function Home() {
         onUndo={handleUndo}
         onSpreadChange={v => { setSpread(v); spreadRef.current = v }}
         onTriggerRadiusChange={setTriggerRadius}
+        onFlySpeedChange={setFlySpeed}
         onToggleAutoExpand={() => setAutoExpand(v => { autoExpandRef.current = !v; return !v })}
         onToggleDream={() => setDreamMode(v => !v)}
         onToggleLines={() => setShowLines(v => !v)}
@@ -619,6 +644,7 @@ export default function Home() {
         onCancelGPS={() => { setGpsFrom(null); setActivePath([]); setPathStep(-1) }}
         onSearch={() => setShowSearch(true)}
         onImport={() => setShowImport(true)}
+        onHelp={() => setShowHelp(true)}
         onNavigate={navigateTo}
       />
       {showSearch && (
@@ -641,6 +667,9 @@ export default function Home() {
           actions={contextActions}
           onClose={() => setContextMenu(null)}
         />
+      )}
+      {showHelp && (
+        <HelpOverlay firstVisit={firstVisit} onClose={closeHelp} />
       )}
       <EmbedFeed pendingCount={points.filter(p => p.isPending).length} />
     </main>
