@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useRef, useEffect, KeyboardEvent } from 'react'
-import type { ModelStatus, Point } from '@/lib/types'
+import type { ModelStatus, Point, ColorBy } from '@/lib/types'
 import { PRESETS } from '@/lib/presets'
 import { nearestNeighbors } from '@/lib/umap'
 import { Minimap } from './Minimap'
@@ -16,7 +16,7 @@ interface HUDProps {
   autoExpand: boolean
   dreamMode: boolean
   showLines: boolean
-  showClusters: boolean
+  colorBy: ColorBy
   bridgeFrom: string | null
   gpsFrom: string | null
   activePath: string[]
@@ -35,13 +35,15 @@ interface HUDProps {
   onToggleAutoExpand: () => void
   onToggleDream: () => void
   onToggleLines: () => void
-  onToggleClusters: () => void
+  onSetColorBy: (mode: ColorBy) => void
   onGoHome: () => void
   onCancelBridge: () => void
   onCancelGPS: () => void
   onSearch: () => void
   onImport: () => void
+  onExport: () => void
   onHelp: () => void
+  onSettings: () => void
   onNavigate: (id: string) => void
 }
 
@@ -62,13 +64,13 @@ function Toggle({ label, active, onClick }: { label: string; active: boolean; on
 
 export function HUD({
   status, loadProgress, isExpanding,
-  spread, triggerRadius, flySpeed, autoExpand, dreamMode, showLines, showClusters,
+  spread, triggerRadius, flySpeed, autoExpand, dreamMode, showLines, colorBy,
   bridgeFrom, gpsFrom, activePath, pathStep,
   points, selectedId, visitHistory, historyIdx,
   onEmbed, onLoadPreset, onClear, onUndo,
   onSpreadChange, onTriggerRadiusChange, onFlySpeedChange,
-  onToggleAutoExpand, onToggleDream, onToggleLines, onToggleClusters,
-  onGoHome, onCancelBridge, onCancelGPS, onSearch, onImport, onHelp, onNavigate,
+  onToggleAutoExpand, onToggleDream, onToggleLines, onSetColorBy,
+  onGoHome, onCancelBridge, onCancelGPS, onSearch, onImport, onExport, onHelp, onSettings, onNavigate,
 }: HUDProps) {
   const [input, setInput] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
@@ -128,8 +130,8 @@ export function HUD({
           modeLabel ? 'text-amber-300/85' : 'text-white/50'
         }`}>
           {status === 'loading'
-            ? loadProgress > 0 ? `${loadProgress}%` : 'connecting'
-            : status === 'error' ? 'ollama not found'
+            ? loadProgress > 0 ? `loading model ${loadProgress}%` : 'loading model'
+            : status === 'error' ? 'embedder error'
             : modeLabel ?? `${real.length} pts`}
         </span>
 
@@ -149,8 +151,10 @@ export function HUD({
           )}
           <button onClick={onImport}  className="text-white/45 hover:text-white/85 text-[10px] font-mono transition-colors">import</button>
           <button onClick={onSearch}  className="text-white/45 hover:text-white/85 text-[10px] font-mono transition-colors">search</button>
+          <button onClick={onSettings} className="text-white/45 hover:text-white/85 text-[10px] font-mono transition-colors">settings</button>
           <button onClick={onGoHome}  className="text-white/45 hover:text-white/85 text-[10px] font-mono transition-colors">home</button>
           {real.length > 0 && <>
+            <button onClick={onExport} className="text-white/45 hover:text-white/85 text-[10px] font-mono transition-colors">export</button>
             <button onClick={onUndo}  className="text-white/45 hover:text-white/85 text-[10px] font-mono transition-colors">undo</button>
             <button onClick={onClear} className="text-white/45 hover:text-white/85 text-[10px] font-mono transition-colors">clear</button>
           </>}
@@ -250,10 +254,13 @@ export function HUD({
         <div className="p-3 space-y-2.5">
 
           <div className="grid grid-cols-2 gap-x-3 gap-y-1.5">
-            <Toggle label="auto-expand" active={autoExpand}   onClick={onToggleAutoExpand} />
-            <Toggle label="dream"       active={dreamMode}    onClick={onToggleDream} />
-            <Toggle label="lines"       active={showLines}    onClick={onToggleLines} />
-            <Toggle label="clusters"    active={showClusters} onClick={onToggleClusters} />
+            <Toggle label="auto-expand" active={autoExpand} onClick={onToggleAutoExpand} />
+            <Toggle label="dream"       active={dreamMode}  onClick={onToggleDream} />
+            <Toggle label="lines"       active={showLines}  onClick={onToggleLines} />
+            <Toggle label="clusters"    active={colorBy === 'cluster'}
+              onClick={() => onSetColorBy(colorBy === 'cluster' ? 'default' : 'cluster')} />
+            <Toggle label="by source"   active={colorBy === 'origin'}
+              onClick={() => onSetColorBy(colorBy === 'origin' ? 'default' : 'origin')} />
           </div>
 
           <div className="border-t border-white/[0.05] pt-2 space-y-1.5">

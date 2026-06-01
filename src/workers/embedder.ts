@@ -13,13 +13,22 @@ function post(msg: WorkerOutgoing) {
 }
 
 async function loadModel() {
+  console.log('[embedder] loadModel start')
   post({ type: 'status', status: 'loading', progress: 0 })
-  extractor = (await pipeline('feature-extraction', 'Xenova/bge-small-en-v1.5', {
-    progress_callback: (info: { progress?: number }) => {
-      post({ type: 'status', status: 'loading', progress: info.progress ?? 0 })
-    },
-  })) as FeatureExtractionPipeline
-  post({ type: 'status', status: 'ready' })
+  try {
+    extractor = (await pipeline('feature-extraction', 'Xenova/bge-small-en-v1.5', {
+      progress_callback: (info: { progress?: number; status?: string; file?: string }) => {
+        console.log('[embedder] progress', info.status, info.file, info.progress)
+        post({ type: 'status', status: 'loading', progress: info.progress ?? 0 })
+      },
+    })) as FeatureExtractionPipeline
+    console.log('[embedder] model ready')
+    post({ type: 'status', status: 'ready' })
+  } catch (e) {
+    console.error('[embedder] model load failed:', e)
+    post({ type: 'error', message: `model load failed: ${String(e)}` })
+    post({ type: 'status', status: 'error' })
+  }
 }
 
 async function embed(text: string, id: string) {
@@ -33,7 +42,7 @@ async function embed(text: string, id: string) {
     const embedding = Array.from(output.data as Float32Array) as number[]
     post({ type: 'result', id, embedding })
   } catch (e) {
-    post({ type: 'error', message: String(e) })
+    post({ type: 'error', id, message: String(e) })
   }
 }
 

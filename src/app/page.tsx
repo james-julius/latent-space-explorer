@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useCallback, useState } from 'react'
+import { useEffect, useRef, useCallback, useState, useMemo } from 'react'
 import dynamic from 'next/dynamic'
 import { HUD } from '@/components/HUD'
 import { SearchOverlay } from '@/components/SearchOverlay'
@@ -8,13 +8,19 @@ import { ContextMenu, type ContextAction } from '@/components/ContextMenu'
 import { EmbedFeed } from '@/components/EmbedFeed'
 import { ImportOverlay } from '@/components/ImportOverlay'
 import { HelpOverlay } from '@/components/HelpOverlay'
-import type { Point, ModelStatus, ContextMenuState } from '@/lib/types'
-import { pointColor } from '@/lib/colors'
+import { SettingsOverlay } from '@/components/SettingsOverlay'
+import type { Point, ModelStatus, ContextMenuState, PointOrigin, ColorBy } from '@/lib/types'
+import { pointColor, originColor } from '@/lib/colors'
 import { projectToPositions, nearestNeighbors, STABLE_THRESHOLD, placeNearNeighbors } from '@/lib/umap'
-import { ollamaEmbed, isEmbedModelAvailable, pullModel, generateRelated } from '@/lib/ollama'
-import { generateBridgeConcepts } from '@/lib/bridge'
+import { embedClient } from '@/lib/embedClient'
+import { browserBgeProvider } from '@/lib/providers/embed/worker'
+import { loadScene, DEFAULT_SCENE, ACTIVE_EMBEDDING_MODEL, ACTIVE_DIM } from '@/lib/scenes'
+import { serializeGraph, downloadGraph, type PersonalGraph } from '@/lib/graph'
+import { getKnowledgeProvider, getKnowledgeDescriptor } from '@/lib/providers/registry'
+import { getKey } from '@/lib/providers/keys'
+import type { KnowledgeProviderId } from '@/lib/providers/types'
 import { kMeans, CLUSTER_COLORS } from '@/lib/clustering'
-import { chunkText, type Chunk } from '@/lib/documents'
+import { type Chunk } from '@/lib/documents'
 import { liveCamera } from '@/lib/cameraState'
 
 const Scene = dynamic(() => import('@/components/Scene').then(m => m.Scene), { ssr: false })
@@ -36,7 +42,7 @@ export default function Home() {
   const [flySpeed, setFlySpeed] = useState(1.6)
   const [autoExpand, setAutoExpand] = useState(true)
   const [showLines, setShowLines] = useState(false)
-  const [showClusters, setShowClusters] = useState(false)
+  const [colorBy, setColorBy] = useState<ColorBy>('default')
   const [homeSignal, setHomeSignal] = useState(0)
 
   // ── Navigation ───────────────────────────────────────────────────────────────
@@ -65,6 +71,50 @@ export default function Home() {
 
   // ── Import ────────────────────────────────────────────────────────────────────
   const [showImport, setShowImport] = useState(false)
+
+  // ── Settings / knowledge provider ─────────────────────────────────────────────
+  const [showSettings, setShowSettings] = useState(false)
+  const [knowledgeId, setKnowledgeId] = useState<KnowledgeProviderId>('ollama')
+  const [keyVersion, setKeyVersion] = useState(0) // bump to rebuild provider after key edits
+  const [providerError, setProviderError] = useState<string | null>(null)
+  const knowledgeProvider = useMemo(
+    () => getKnowledgeProvider(knowledgeId, getKey(knowledgeId)),
+    [knowledgeId, keyVersion],
+  )
+  const knowledgeProviderRef = useRef(knowledgeProvider)
+  knowledgeProviderRef.current = knowledgeProvider
+  const knowledgeOriginRef = useRef(getKnowledgeDescriptor(knowledgeId).origin)
+  knowledgeOriginRef.current = getKnowledgeDescriptor(knowledgeId).origin
+
+  const reportProviderError = useCallback((e: unknown) => {
+    const msg = e instanceof Error ? e.message : String(e)
+    console.warn('knowledge provider error:', msg)
+    setProviderError(msg)
+  }, [])
+  const safeExpand = useCallback(async (term: string): Promise<string[]> => {
+    try { return await knowledgeProviderRef.current.expand(term) }
+    catch (e) { reportProviderError(e); return [] }
+  }, [reportProviderError])
+  const safeBridge = useCallback(async (a: string, b: string): Promise<string[]> => {
+    try { return await knowledgeProviderRef.current.bridge(a, b) }
+    catch (e) { reportProviderError(e); return [] }
+  }, [reportProviderError])
+
+  useEffect(() => {
+    if (!providerError) return
+    const t = setTimeout(() => setProviderError(null), 5000)
+    return () => clearTimeout(t)
+  }, [providerError])
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('lse-knowledge-provider') as KnowledgeProviderId | null
+      if (saved) setKnowledgeId(saved)
+    } catch { /* ignore */ }
+  }, [])
+  useEffect(() => {
+    try { localStorage.setItem('lse-knowledge-provider', knowledgeId) } catch { /* ignore */ }
+  }, [knowledgeId])
 
   // ── Help / welcome ────────────────────────────────────────────────────────────
   const [showHelp, setShowHelp] = useState(false)
@@ -95,27 +145,67 @@ export default function Home() {
   historyIdxRef.current   = historyIdx
   autoExpandRef.current   = autoExpand
 
-  // ── Persistence ──────────────────────────────────────────────────────────────
+  // ── Boot: load pre-seeded scene + restore the user's grown additions ──────────
+  // Only the user-added delta (origin !== 'preset') is persisted to localStorage;
+  // the seed cloud is re-fetched each load. Keeps storage small and dodges quota.
+  const [sceneReady, setSceneReady] = useState(false)
+  const [legacyPoints, setLegacyPoints] = useState<Point[] | null>(null)
+  const sceneIdRef = useRef<string>(DEFAULT_SCENE)
+  const sceneModelRef = useRef<string>(ACTIVE_EMBEDDING_MODEL)
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem('lse-points')
-      if (raw) {
-        const pts = JSON.parse(raw) as Point[]
-        setPoints(pts.filter(p => !p.isPending)) // don't restore pending
-        colorIndex.current = pts.length
-      }
-      const rawExp = localStorage.getItem('lse-expanded')
-      if (rawExp) setExpandedIds(new Set(JSON.parse(rawExp) as string[]))
-    } catch { /* ignore */ }
+    let cancelled = false
+    async function boot() {
+      try {
+        const rawExp = localStorage.getItem('lse-expanded')
+        if (rawExp) setExpandedIds(new Set(JSON.parse(rawExp) as string[]))
+      } catch { /* ignore */ }
+
+      let sceneId = DEFAULT_SCENE
+      try { sceneId = localStorage.getItem('lse-scene') || DEFAULT_SCENE } catch { /* ignore */ }
+      sceneIdRef.current = sceneId
+
+      let seedPoints: Point[] = []
+      try {
+        const scene = await loadScene(sceneId)
+        seedPoints = scene.points
+        sceneModelRef.current = scene.embeddingModel
+      } catch (e) { console.error('scene load failed:', e) }
+
+      let userPoints: Point[] = []
+      try {
+        const raw = localStorage.getItem('lse-points')
+        if (raw) userPoints = (JSON.parse(raw) as Point[]).filter(p => !p.isPending)
+      } catch { /* ignore */ }
+
+      if (cancelled) return
+
+      // Guard the embedding space: saved points whose vectors are a different
+      // dimension can't share a map (cosine math would be garbage). Hold them
+      // aside and offer to re-embed or discard rather than mixing spaces.
+      const foreign = userPoints.filter(p => p.embedding.length > 0 && p.embedding.length !== ACTIVE_DIM)
+      const native = userPoints.filter(p => p.embedding.length === ACTIVE_DIM)
+      if (foreign.length > 0) setLegacyPoints(foreign)
+
+      const merged = [...seedPoints, ...native]
+      setPoints(merged)
+      colorIndex.current = merged.length
+      try { localStorage.setItem('lse-scene', sceneId) } catch { /* ignore */ }
+      setSceneReady(true)
+    }
+    boot()
+    return () => { cancelled = true }
   }, [])
 
   useEffect(() => {
-    if (points.length === 0) return
+    if (!sceneReady) return
     const t = setTimeout(() => {
-      try { localStorage.setItem('lse-points', JSON.stringify(points.filter(p => !p.isPending))) } catch { /* quota */ }
+      try {
+        const delta = points.filter(p => !p.isPending && p.origin !== 'preset')
+        localStorage.setItem('lse-points', JSON.stringify(delta))
+      } catch { /* quota */ }
     }, 800)
     return () => clearTimeout(t)
-  }, [points])
+  }, [points, sceneReady])
 
   useEffect(() => {
     try { localStorage.setItem('lse-expanded', JSON.stringify([...expandedIds])) } catch { /* quota */ }
@@ -139,32 +229,31 @@ export default function Home() {
     }
   }, [firstVisit])
 
-  // ── Ollama init ───────────────────────────────────────────────────────────────
+  // ── Embedder init (in-browser bge-small worker) ───────────────────────────────
+  const embedProvider = browserBgeProvider
   useEffect(() => {
-    async function init() {
-      setStatus('loading')
-      try {
-        const available = await isEmbedModelAvailable()
-        if (!available) await pullModel(pct => setLoadProgress(pct))
-        else setLoadProgress(100)
-        modelReady.current = true
-        setStatus('ready')
-      } catch (e) {
-        console.error('Ollama init error:', e)
-        setStatus('error')
-      }
-    }
-    init()
-  }, [])
+    embedClient.warmup()
+    return embedProvider.onStatus?.((s, p) => {
+      setStatus(s)
+      setLoadProgress(p)
+      modelReady.current = s === 'ready'
+    })
+  }, [embedProvider])
 
-  // ── Cluster colouring ─────────────────────────────────────────────────────────
+  // ── Colour mode: default (golden) · origin (by model) · cluster (kMeans) ───────
   useEffect(() => {
-    if (!showClusters) {
-      // Restore original colors
+    if (colorBy === 'default') {
       setPoints(prev => prev.map(p => ({ ...p, color: p.baseColor ?? p.color })))
       return
     }
-    const real = points.filter(p => !p.isPending && p.embedding.length > 0)
+    if (colorBy === 'origin') {
+      setPoints(prev => prev.map(p => ({
+        ...p, baseColor: p.baseColor ?? p.color, color: originColor(p.origin),
+      })))
+      return
+    }
+    // cluster
+    const real = pointsRef.current.filter(p => !p.isPending && p.embedding.length > 0)
     if (real.length < 3) return
     const k = Math.min(8, Math.max(2, Math.floor(real.length / 5)))
     const labels = kMeans(real.map(p => p.embedding), k)
@@ -175,7 +264,7 @@ export default function Home() {
       return { ...p, baseColor: p.baseColor ?? p.color, color: clusterColor }
     }))
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showClusters])
+  }, [colorBy])
 
   // ── Navigate to a point (with history) ────────────────────────────────────────
   const navigateTo = useCallback((id: string) => {
@@ -194,7 +283,8 @@ export default function Home() {
   // ── Embed one concept ──────────────────────────────────────────────────────────
   const embedOne = useCallback(async (
     text: string,
-    nearPos?: [number, number, number]
+    nearPos?: [number, number, number],
+    origin: PointOrigin = 'user'
   ): Promise<Point> => {
     const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`
     const color = pointColor(colorIndex.current++)
@@ -205,11 +295,11 @@ export default function Home() {
 
     setPoints(prev => [
       ...prev,
-      { id, text, embedding: [], position: placeholderPos, color, isPending: true },
+      { id, text, embedding: [], position: placeholderPos, color, isPending: true, origin },
     ])
 
-    const embedding = await ollamaEmbed(text)
-    const point: Point = { id, text, embedding, position: placeholderPos, color }
+    const embedding = await embedProvider.embed(text)
+    const point: Point = { id, text, embedding, position: placeholderPos, color, origin }
 
     setPoints(prev => {
       const rest = prev.filter(p => p.id !== id)
@@ -228,7 +318,7 @@ export default function Home() {
     })
 
     return point
-  }, [])
+  }, [embedProvider])
 
   // ── Expand a point with related concepts ──────────────────────────────────────
   const expandPoint = useCallback(async (pointId: string) => {
@@ -241,16 +331,16 @@ export default function Home() {
     setIsExpanding(true)
     setExpandedIds(prev => new Set(prev).add(pointId))
     try {
-      const related = await generateRelated(pt.text)
+      const related = await safeExpand(pt.text)
       for (const term of related) {
         if (pointsRef.current.some(p => p.text.toLowerCase() === term.toLowerCase())) continue
-        await embedOne(term, pt.position)
+        await embedOne(term, pt.position, knowledgeOriginRef.current)
       }
     } finally {
       expandingRef.current = false
       setIsExpanding(false)
     }
-  }, [embedOne])
+  }, [embedOne, safeExpand])
 
   // ── Embed from input (with optional auto-expand) ──────────────────────────────
   const handleEmbed = useCallback(async (text: string) => {
@@ -269,14 +359,14 @@ export default function Home() {
       setExpandedIds(prev => new Set(prev).add(pt.id))
 
       if (autoExpandRef.current) {
-        const related = await generateRelated(text)
-        for (const term of related) await embedOne(term)
+        const related = await safeExpand(text)
+        for (const term of related) await embedOne(term, undefined, knowledgeOriginRef.current)
       }
     } finally {
       expandingRef.current = false
       setIsExpanding(false)
     }
-  }, [status, embedOne])
+  }, [status, embedOne, safeExpand])
 
   // ── Load preset ───────────────────────────────────────────────────────────────
   const handleLoadPreset = useCallback(async (texts: string[]) => {
@@ -297,13 +387,13 @@ export default function Home() {
     setIsExpanding(true)
     expandingRef.current = true
     try {
-      const concepts = await generateBridgeConcepts(a.text, b.text)
-      for (const c of concepts) await embedOne(c, a.position)
+      const concepts = await safeBridge(a.text, b.text)
+      for (const c of concepts) await embedOne(c, a.position, knowledgeOriginRef.current)
     } finally {
       expandingRef.current = false
       setIsExpanding(false)
     }
-  }, [embedOne])
+  }, [embedOne, safeBridge])
 
   // ── Document import ───────────────────────────────────────────────────────────
   const handleImport = useCallback(async (chunks: Chunk[]) => {
@@ -323,12 +413,12 @@ export default function Home() {
       setPoints(prev => [
         ...prev,
         { id, text: chunk.text, fullText: chunk.fullText, source: chunk.source,
-          embedding: [], position: placeholderPos, color, isPending: true },
+          embedding: [], position: placeholderPos, color, isPending: true, origin: 'import' },
       ])
 
-      const embedding = await ollamaEmbed(chunk.text)
+      const embedding = await embedProvider.embed(chunk.text)
       const point: Point = { id, text: chunk.text, fullText: chunk.fullText, source: chunk.source,
-        embedding, position: placeholderPos, color }
+        embedding, position: placeholderPos, color, origin: 'import' }
 
       setPoints(prev => {
         const rest = prev.filter(p => p.id !== id)
@@ -344,7 +434,7 @@ export default function Home() {
       })
     }
     colorIndex.current = baseIdx + chunks.length
-  }, [status])
+  }, [status, embedProvider])
 
   // ── GPS: narrative path between two points ────────────────────────────────────
   const handleGPS = useCallback(async (fromId: string, toId: string) => {
@@ -354,10 +444,10 @@ export default function Home() {
     setIsExpanding(true)
     expandingRef.current = true
     try {
-      const concepts = await generateBridgeConcepts(a.text, b.text)
+      const concepts = await safeBridge(a.text, b.text)
       const waypointIds: string[] = []
       for (const c of concepts) {
-        const pt = await embedOne(c, a.position)
+        const pt = await embedOne(c, a.position, knowledgeOriginRef.current)
         waypointIds.push(pt.id)
       }
       const path = [fromId, ...waypointIds, toId]
@@ -367,7 +457,7 @@ export default function Home() {
       expandingRef.current = false
       setIsExpanding(false)
     }
-  }, [embedOne])
+  }, [embedOne, safeBridge])
 
   // ── GPS step-through ──────────────────────────────────────────────────────────
   useEffect(() => {
@@ -410,7 +500,12 @@ export default function Home() {
 
   // ── Clear ─────────────────────────────────────────────────────────────────────
   const handleClear = useCallback(() => {
-    setPoints([])
+    // Reset to the seed cloud: drop the user's additions, keep the preset scene.
+    setPoints(prev => {
+      const seed = prev.filter(p => p.origin === 'preset')
+      colorIndex.current = seed.length
+      return seed
+    })
     setSelectedId(null)
     setExpandedIds(new Set())
     setBridgeFrom(null)
@@ -419,9 +514,43 @@ export default function Home() {
     setPathStep(-1)
     setVisitHistory([])
     setHistoryIdx(-1)
-    colorIndex.current = 0
     localStorage.removeItem('lse-points')
     localStorage.removeItem('lse-expanded')
+  }, [])
+
+  // ── Export / import a personal grown graph ────────────────────────────────────
+  const handleExport = useCallback(() => {
+    downloadGraph(serializeGraph(pointsRef.current, sceneIdRef.current))
+  }, [])
+
+  const handleImportGraph = useCallback((graph: PersonalGraph) => {
+    if (graph.embeddingModel !== sceneModelRef.current || graph.dim !== ACTIVE_DIM) {
+      setProviderError(
+        `Graph uses ${graph.embeddingModel}; this scene is ${sceneModelRef.current}. Can't merge.`,
+      )
+      return
+    }
+    undoStack.current.push([...pointsRef.current])
+    undoExpandedStack.current.push(new Set(expandedIdsRef.current))
+    setPoints(prev => {
+      const existing = new Set(prev.map(p => p.id))
+      const merged = [...prev, ...graph.points.filter(p => !p.isPending && !existing.has(p.id))]
+      colorIndex.current = merged.length
+      return merged
+    })
+  }, [])
+
+  // ── Legacy points (old embedding space): re-embed into the current space ──────
+  const handleReembedLegacy = useCallback(async () => {
+    const legacy = legacyPoints
+    if (!legacy) return
+    setLegacyPoints(null)
+    for (const p of legacy) await embedOne(p.text, undefined, p.origin ?? 'user')
+  }, [legacyPoints, embedOne])
+
+  const handleDiscardLegacy = useCallback(() => {
+    setLegacyPoints(null)
+    try { localStorage.removeItem('lse-points') } catch { /* ignore */ }
   }, [])
 
   // ── Undo ──────────────────────────────────────────────────────────────────────
@@ -619,7 +748,7 @@ export default function Home() {
         autoExpand={autoExpand}
         dreamMode={dreamMode}
         showLines={showLines}
-        showClusters={showClusters}
+        colorBy={colorBy}
         bridgeFrom={bridgeFrom ? points.find(p => p.id === bridgeFrom)?.text ?? null : null}
         gpsFrom={gpsFrom ? points.find(p => p.id === gpsFrom)?.text ?? null : null}
         activePath={activePath}
@@ -638,13 +767,15 @@ export default function Home() {
         onToggleAutoExpand={() => setAutoExpand(v => { autoExpandRef.current = !v; return !v })}
         onToggleDream={() => setDreamMode(v => !v)}
         onToggleLines={() => setShowLines(v => !v)}
-        onToggleClusters={() => setShowClusters(v => !v)}
+        onSetColorBy={setColorBy}
         onGoHome={() => setHomeSignal(s => s + 1)}
         onCancelBridge={() => setBridgeFrom(null)}
         onCancelGPS={() => { setGpsFrom(null); setActivePath([]); setPathStep(-1) }}
         onSearch={() => setShowSearch(true)}
         onImport={() => setShowImport(true)}
+        onExport={handleExport}
         onHelp={() => setShowHelp(true)}
+        onSettings={() => setShowSettings(true)}
         onNavigate={navigateTo}
       />
       {showSearch && (
@@ -657,6 +788,7 @@ export default function Home() {
       {showImport && (
         <ImportOverlay
           onImport={handleImport}
+          onImportGraph={handleImportGraph}
           onClose={() => setShowImport(false)}
         />
       )}
@@ -670,6 +802,35 @@ export default function Home() {
       )}
       {showHelp && (
         <HelpOverlay firstVisit={firstVisit} onClose={closeHelp} />
+      )}
+      {showSettings && (
+        <SettingsOverlay
+          knowledgeId={knowledgeId}
+          onKnowledgeChange={setKnowledgeId}
+          onKeysChanged={() => setKeyVersion(v => v + 1)}
+          embeddingModel={sceneModelRef.current}
+          onClose={() => setShowSettings(false)}
+        />
+      )}
+      {providerError && (
+        <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-50 max-w-md
+          rounded-lg border border-amber-400/30 bg-amber-950/80 backdrop-blur-sm
+          px-4 py-2.5 text-[12px] font-mono text-amber-200/90 shadow-xl">
+          {providerError}
+        </div>
+      )}
+      {legacyPoints && legacyPoints.length > 0 && (
+        <div className="fixed top-16 left-1/2 -translate-x-1/2 z-50 max-w-lg flex items-center gap-3
+          rounded-lg border border-amber-400/30 bg-amber-950/85 backdrop-blur-sm
+          px-4 py-2.5 text-[12px] font-mono text-amber-200/90 shadow-xl">
+          <span>{legacyPoints.length} saved points use an old embedding model.</span>
+          <button onClick={handleReembedLegacy}
+            className="rounded border border-amber-300/40 px-2 py-1 text-amber-100 hover:bg-amber-400/15 transition-colors">
+            re-embed
+          </button>
+          <button onClick={handleDiscardLegacy}
+            className="text-amber-200/60 hover:text-amber-100 transition-colors">discard</button>
+        </div>
       )}
       <EmbedFeed pendingCount={points.filter(p => p.isPending).length} />
     </main>

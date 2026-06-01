@@ -2,13 +2,15 @@
 
 import { useState, useRef, useCallback, DragEvent, ChangeEvent } from 'react'
 import { chunkText, readFileAsText, type Chunk } from '@/lib/documents'
+import { parseGraph, type PersonalGraph } from '@/lib/graph'
 
 interface Props {
   onImport: (chunks: Chunk[]) => void
+  onImportGraph: (graph: PersonalGraph) => void
   onClose: () => void
 }
 
-export function ImportOverlay({ onImport, onClose }: Props) {
+export function ImportOverlay({ onImport, onImportGraph, onClose }: Props) {
   const [dragging, setDragging] = useState(false)
   const [status, setStatus] = useState<'idle' | 'processing' | 'done'>('idle')
   const [chunkCount, setChunkCount] = useState(0)
@@ -26,10 +28,20 @@ export function ImportOverlay({ onImport, onClose }: Props) {
 
   const handleFile = useCallback(async (file: File) => {
     const text = await readFileAsText(file)
+    // A previously-exported graph? Restore it directly instead of chunking.
+    if (file.name.endsWith('.json')) {
+      const graph = parseGraph(text)
+      if (graph) {
+        setStatus('done')
+        setChunkCount(graph.points.length)
+        setTimeout(() => { onImportGraph(graph); onClose() }, 400)
+        return
+      }
+    }
     const name = file.name.replace(/\.[^/.]+$/, '')
     setSourceName(name)
     await process(text, name)
-  }, [process])
+  }, [process, onImportGraph, onClose])
 
   const onDrop = useCallback((e: DragEvent) => {
     e.preventDefault()
@@ -76,14 +88,14 @@ export function ImportOverlay({ onImport, onClose }: Props) {
             onDrop={onDrop}
             onClick={() => fileInputRef.current?.click()}
           >
-            <input ref={fileInputRef} type="file" accept=".txt,.md,.markdown" className="hidden" onChange={onFileChange} />
+            <input ref={fileInputRef} type="file" accept=".txt,.md,.markdown,.json" className="hidden" onChange={onFileChange} />
             {status === 'processing' ? (
               <p className="text-amber-400/70 text-sm font-mono animate-pulse">chunking…</p>
             ) : status === 'done' ? (
               <p className="text-emerald-400/70 text-sm font-mono">{chunkCount} passages ready</p>
             ) : (
               <>
-                <p className="text-white/40 text-sm font-mono">drop .txt or .md here</p>
+                <p className="text-white/40 text-sm font-mono">drop .txt, .md, or a saved .json graph</p>
                 <p className="text-white/20 text-xs font-mono mt-1">or click to browse</p>
               </>
             )}

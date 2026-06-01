@@ -1,0 +1,10 @@
+[
+  {
+    "sceneId": "concept-atlas",
+    "title": "Concept Atlas",
+    "description": "A broad tour of everyday meaning — emotions, nature, science, culture and more.",
+    "count": 591,
+    "dim": 384,
+    "embeddingModel": "bge-small-en-v1.5@384"
+  }
+]
