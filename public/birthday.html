@@ -164,12 +164,28 @@
   }
   .dl-note { color:#fff; margin-top:18px; font-size: clamp(14px,2.6vw,20px); -webkit-text-stroke:0.7px rgba(0,0,0,0.5); }
 
-  .bonus { margin-top: 40px; }
-  .bonus a {
-    color:#fff; font-weight:900; font-size: clamp(15px,3vw,22px);
-    text-decoration: underline wavy;
-    -webkit-text-stroke:0.6px rgba(0,0,0,0.5);
+  .bonus { margin-top: 34px; }
+  .bonus-label { color:#fff; font-size: clamp(15px,3vw,22px); -webkit-text-stroke:0.6px rgba(0,0,0,0.5); margin-bottom: 14px; }
+  .explore {
+    display: inline-flex; align-items:center; gap: 12px;
+    font-family: var(--comic);
+    font-size: clamp(20px, 4vw, 34px);
+    font-weight: 900;
+    text-decoration: none;
+    color: #fff;
+    background: linear-gradient(180deg,#b000ff,#00b3ff);
+    padding: 18px 36px;
+    border: 5px solid #fff;
+    border-radius: 999px;
+    box-shadow: 0 0 0 6px #14004a, 0 16px 0 #0a0030, 0 28px 46px rgba(0,0,0,0.5);
+    cursor: pointer;
+    transition: transform 0.08s, filter 0.2s;
+    -webkit-text-stroke: 0.5px rgba(0,0,0,0.35);
+    animation: floaty 2.6s infinite ease-in-out;
   }
+  .explore:hover { transform: scale(1.07) rotate(1deg); filter: brightness(1.1); animation-play-state: paused; }
+  .explore:active { transform: translateY(12px) scale(0.97); box-shadow: 0 0 0 6px #14004a, 0 4px 0 #0a0030; }
+  @keyframes floaty { 0%,100%{transform:translateY(0) rotate(-1deg);} 50%{transform:translateY(-10px) rotate(1deg);} }
 
   /* floating balloons */
   .balloon {
@@ -225,7 +241,8 @@
     </div>
 
     <div class="bonus">
-      <a href="/?scene=how-to-live">✨ and click here to fly through a 3D map of all the ideas ✨</a>
+      <p class="bonus-label">✨ AND there's more — fly through a 3D map of every idea from the podcast ✨</p>
+      <a class="explore" href="/?scene=how-to-live">🪐 EXPLORE THE LATENT SPACE 🚀</a>
     </div>
   </div>
 
