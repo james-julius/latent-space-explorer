@@ -22,11 +22,3 @@ export interface ContextMenuState {
   y: number
   pointId: string
 }
-
-
-export type WorkerIncoming = { type: 'embed'; text: string; id: string }
-
-export type WorkerOutgoing =
-  | { type: 'status'; status: ModelStatus; progress?: number }
-  | { type: 'result'; id: string; embedding: number[] }
-  | { type: 'error'; id?: string; message: string }

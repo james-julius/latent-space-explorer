@@ -39,7 +39,6 @@ class EmbedClient {
         this.emit()
       } catch (e) {
         console.error('[embedder] model load failed:', e)
-        ;(window as unknown as { __lseEmbedErr?: string }).__lseEmbedErr = String((e as Error)?.stack || e)
         this._status = 'error'
         this.emit()
         throw e
