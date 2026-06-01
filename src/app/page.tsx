@@ -207,6 +207,13 @@ export default function Home() {
     return () => clearTimeout(t)
   }, [points, sceneReady])
 
+  // TEMP debug: expose origin/color sample for verification
+  useEffect(() => {
+    const sample = points.slice(0, 3).concat(points.filter(p => p.origin === 'user').slice(0, 2))
+      .map(p => ({ text: p.text, origin: p.origin, color: p.color }))
+    ;(window as unknown as { __pts?: unknown }).__pts = { colorBy, sample }
+  }, [points, colorBy])
+
   useEffect(() => {
     try { localStorage.setItem('lse-expanded', JSON.stringify([...expandedIds])) } catch { /* quota */ }
   }, [expandedIds])
