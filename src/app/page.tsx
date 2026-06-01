@@ -160,8 +160,12 @@ export default function Home() {
         if (rawExp) setExpandedIds(new Set(JSON.parse(rawExp) as string[]))
       } catch { /* ignore */ }
 
+      // Scene priority: ?scene= URL param (for shareable links) > localStorage > default.
       let sceneId = DEFAULT_SCENE
-      try { sceneId = localStorage.getItem('lse-scene') || DEFAULT_SCENE } catch { /* ignore */ }
+      try {
+        const urlScene = new URLSearchParams(window.location.search).get('scene')
+        sceneId = urlScene || localStorage.getItem('lse-scene') || DEFAULT_SCENE
+      } catch { /* ignore */ }
       sceneIdRef.current = sceneId
 
       let seedPoints: Point[] = []
@@ -169,7 +173,20 @@ export default function Home() {
         const scene = await loadScene(sceneId)
         seedPoints = scene.points
         sceneModelRef.current = scene.embeddingModel
-      } catch (e) { console.error('scene load failed:', e) }
+      } catch (e) {
+        // A bad/typo'd ?scene= shouldn't strand the visitor on a blank cloud —
+        // fall back to the default scene.
+        console.error('scene load failed:', e)
+        if (sceneId !== DEFAULT_SCENE) {
+          try {
+            const scene = await loadScene(DEFAULT_SCENE)
+            sceneId = DEFAULT_SCENE
+            sceneIdRef.current = DEFAULT_SCENE
+            seedPoints = scene.points
+            sceneModelRef.current = scene.embeddingModel
+          } catch (e2) { console.error('default scene load failed:', e2) }
+        }
+      }
 
       let userPoints: Point[] = []
       try {

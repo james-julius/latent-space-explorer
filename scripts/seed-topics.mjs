@@ -202,4 +202,132 @@ export const SCENES = [
       },
     ],
   },
+  {
+    sceneId: 'how-to-live',
+    title: 'How to Live',
+    description:
+      'The books, thinkers and ideas from a synthesis of seventeen books on living well — health, the mind, attention, time, habits, money, relationships and happiness.',
+    topics: [
+      {
+        topicId: 'books',
+        label: 'The seventeen books',
+        terms: [
+          'How Not to Die', 'The Hungry Brain', 'Why We Sleep', 'Why Buddhism Is True',
+          'The Power of Now', 'The Happiness Trap', 'Deep Work', 'Digital Minimalism',
+          'Essentialism', 'Four Thousand Weeks', 'Atomic Habits', 'Dopamine Nation',
+          'The Seven Principles for Making Marriage Work',
+          'How to Win Friends and Influence People', 'The Art of Gathering',
+          'The Psychology of Money', 'Stumbling on Happiness',
+        ],
+      },
+      {
+        topicId: 'thinkers',
+        label: 'Authors & thinkers',
+        terms: [
+          'Michael Greger', 'Stephan Guyenet', 'Matthew Walker', 'Robert Wright',
+          'Eckhart Tolle', 'Russ Harris', 'Cal Newport', 'Greg McKeown',
+          'Oliver Burkeman', 'James Clear', 'Anna Lembke', 'John Gottman',
+          'Dale Carnegie', 'Priya Parker', 'Morgan Housel', 'Daniel Gilbert',
+          'Viktor Frankl', 'Mihaly Csikszentmihalyi', 'Warren Buffett',
+          'Charlie Munger', 'Niko Tinbergen', 'Judson Brewer',
+        ],
+      },
+      {
+        topicId: 'principles',
+        label: 'The eight big ideas',
+        terms: [
+          'you are not your mind', 'evolutionary mismatch', 'design beats discipline',
+          'the hedonic treadmill', 'finitude gives meaning', 'the body runs the mind',
+          'the power of compounding', 'connection is everything',
+        ],
+      },
+      {
+        topicId: 'mind',
+        label: 'Mind, meditation & presence',
+        terms: [
+          'defusion', 'urge surfing', 'the RAIN technique', 'watching the thinker',
+          'the observing self', 'the pain-body', 'dukkha', 'non-attachment',
+          'radical acceptance', 'mindfulness', 'meditation', 'the present moment',
+          'consecrated action', 'feelings are data not directives', 'the inner critic',
+        ],
+      },
+      {
+        topicId: 'body',
+        label: 'Sleep, food & the body',
+        terms: [
+          'consistent sleep', 'circadian rhythm', 'melatonin', 'sleep debt',
+          'a reactive amygdala', 'ghrelin', 'leptin', 'the lipostat',
+          'body-fat set point', 'whole foods', 'processed food', 'the bliss point',
+          'caffeine half-life', 'daily exercise', 'cold exposure', 'fasting', 'hormesis',
+        ],
+      },
+      {
+        topicId: 'pleasure',
+        label: 'Pleasure & craving',
+        terms: [
+          'dopamine', 'the pleasure-pain balance', 'anhedonia', 'addiction',
+          'a supernormal stimulus', 'self-binding', 'the dopamine fast', 'craving',
+          'abstinence', 'intermittent reward',
+        ],
+      },
+      {
+        topicId: 'attention',
+        label: 'Attention, focus & work',
+        terms: [
+          'deep work', 'the flow state', 'attention residue', 'shallow work',
+          'solitude deprivation', 'distraction', 'context switching',
+          'the attention economy', 'single-tasking', 'the smartphone',
+        ],
+      },
+      {
+        topicId: 'time',
+        label: 'Time & finitude',
+        terms: [
+          'the efficiency trap', 'the joy of missing out', 'cosmic insignificance',
+          'atelic activities', 'productive procrastination',
+          'the disciplined pursuit of less', 'the ninety percent rule', 'trade-offs',
+          'clock time versus psychological time', 'pay yourself first',
+        ],
+      },
+      {
+        topicId: 'habits',
+        label: 'Habits & change',
+        terms: [
+          'systems over goals', 'identity-based habits', 'the two-minute rule',
+          'never miss twice', 'environment design', 'one percent better',
+          'the plateau of latent potential', 'keystone habits', 'habit stacking',
+          'make it obvious',
+        ],
+      },
+      {
+        topicId: 'relationships',
+        label: 'Connection & love',
+        terms: [
+          'friendship', 'contempt', 'the four horsemen', 'turning toward bids',
+          'emotional flooding', 'the magic six hours', 'generous authority',
+          'gathering with purpose', 'feeling appreciated', 'loneliness',
+          'turning outward',
+        ],
+      },
+      {
+        topicId: 'money',
+        label: 'Money & freedom',
+        terms: [
+          'enough', 'room for error', 'the savings rate', 'compound interest',
+          'financial survival', 'wealth is what you do not see', 'control of your time',
+          'results minus expectations', 'reasonable not rational',
+          'keeping your ego below your income',
+        ],
+      },
+      {
+        topicId: 'happiness',
+        label: 'Forecasting happiness',
+        terms: [
+          'the impact bias', 'the psychological immune system', 'presentism',
+          'surrogation', 'the end of history illusion', 'hedonic adaptation',
+          'prospection', 'we are strangers to ourselves', 'misremembering the past',
+        ],
+      },
+    ],
+  },
 ]

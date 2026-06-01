@@ -6,5 +6,13 @@
     "count": 591,
     "dim": 384,
     "embeddingModel": "bge-small-en-v1.5@384"
+  },
+  {
+    "sceneId": "how-to-live",
+    "title": "How to Live",
+    "description": "The books, thinkers and ideas from a synthesis of seventeen books on living well — health, the mind, attention, time, habits, money, relationships and happiness.",
+    "count": 149,
+    "dim": 384,
+    "embeddingModel": "bge-small-en-v1.5@384"
   }
 ]
